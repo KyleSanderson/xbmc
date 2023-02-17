@@ -89,9 +89,13 @@ CFileCache::CFileCache(const unsigned int flags)
     m_readPos(0),
     m_writePos(0),
     m_chunkSize(0),
+    m_cacheSize(0),
     m_writeRate(0),
     m_writeRateActual(0),
     m_writeRateLowSpeed(0),
+    m_readRate(0),
+    m_readRateMax(0),
+    m_readCache(0),
     m_forwardCacheSize(0),
     m_bFilling(false),
     m_fileSize(0),
@@ -160,7 +164,7 @@ bool CFileCache::Open(const CURL& url)
       {
         // Cap cache size by filesize, but not for audio/video files as those may grow.
         // We don't need to take into account READ_MULTI_STREAM here as that's only used for audio/video
-        cacheSize = m_fileSize;
+        m_cacheSize = cacheSize = m_fileSize;
 
         // Cap chunk size by cache size
         if (m_chunkSize > cacheSize)
@@ -168,7 +172,7 @@ bool CFileCache::Open(const CURL& url)
       }
       else
       {
-        cacheSize = CServiceBroker::GetSettingsComponent()->GetAdvancedSettings()->m_cacheMemSize;
+        m_cacheSize = cacheSize = CServiceBroker::GetSettingsComponent()->GetAdvancedSettings()->m_cacheMemSize;
 
         // NOTE: READ_MULTI_STREAM is only used with READ_AUDIO_VIDEO
         if (m_flags & READ_MULTI_STREAM)
@@ -216,9 +220,13 @@ bool CFileCache::Open(const CURL& url)
   m_writeRate = 1024 * 1024;
   m_writeRateActual = 0;
   m_writeRateLowSpeed = 0;
+  m_readRate = 0;
+  m_readRateMax = 0;
+  m_readCache = m_cacheSize;
   m_bFilling = true;
   m_seekEvent.Reset();
   m_seekEnded.Reset();
+  m_readEvent.Reset();
 
   CThread::Create(false);
 
@@ -243,16 +251,14 @@ void CFileCache::Process()
     return;
   }
 
-  CWriteRate limiter;
-  CWriteRate average;
-
   while (!m_bStop)
   {
-    // Update filesize
+     // Update filesize
     m_fileSize = m_source.GetLength();
 
-    // check for seek events
-    if (m_seekEvent.Wait(0ms))
+    /* Super dumb that the first param does nothing with 0ms. */
+    m_bFilling = m_pCache->WaitForData(0, 0ms) < m_readCache;
+    if (m_seekEvent.Wait(0ms)) // check for seek events
     {
       m_seekEvent.Reset();
       const int64_t cacheMaxPos = m_pCache->CachedDataEndPosIfSeekTo(m_seekPos);
@@ -277,76 +283,57 @@ void CFileCache::Process()
         m_readPos = m_seekPos;
         m_writePos = m_pCache->CachedDataEndPos();
         assert(m_writePos == cacheMaxPos);
-        average.Reset(m_writePos, bCompleteReset); // Can only recalculate new average from scratch after a full reset (empty cache)
-        limiter.Reset(m_writePos);
+
         m_nSeekResult = m_seekPos;
         if (bCompleteReset)
         {
           CLog::Log(LOGDEBUG,
                     "CFileCache::{} - <{}> cache completely reset for seek to position {}",
                     __FUNCTION__, m_sourcePath, m_seekPos);
-          m_bFilling = true;
           m_writeRateLowSpeed = 0;
         }
       }
 
       m_seekEnded.Set();
+      continue;
+    } else if (m_bFilling) {
+      m_readEvent.Reset();
+    } else if (m_readEvent.Wait(1000ms)) {
+      m_readEvent.Reset();
+      continue;
+    } else {
+      continue;
     }
 
-    while (m_writeRate)
-    {
-      if (m_writePos - m_readPos < m_writeRate * CServiceBroker::GetSettingsComponent()->GetAdvancedSettings()->m_cacheReadFactor)
-      {
-        limiter.Reset(m_writePos);
-        break;
-      }
-
-      if (limiter.Rate(m_writePos) < m_writeRate * CServiceBroker::GetSettingsComponent()->GetAdvancedSettings()->m_cacheReadFactor)
-        break;
-
-      if (m_seekEvent.Wait(100ms))
-      {
-        if (!m_bStop)
-          m_seekEvent.Set();
-        break;
-      }
-    }
-
-    const int64_t maxWrite = m_pCache->GetMaxWriteSize(m_chunkSize);
     int64_t maxSourceRead = m_chunkSize;
     // Cap source read size by space available between current write position and EOF
     if (m_fileSize != 0)
       maxSourceRead = std::min(maxSourceRead, m_fileSize - m_writePos);
 
+    const int64_t maxWrite = m_pCache->GetMaxWriteSize(m_chunkSize);
     /* Only read from source if there's enough write space in the cache
-     * else we may keep disposing data and seeking back on (slow) source
-     */
-    if (maxWrite < maxSourceRead)
+    * else we may keep disposing data and seeking back on (slow) source
+    */
+    if (maxWrite < 1) {
+      continue;
+    } else if (maxSourceRead > maxWrite)
     {
-      // Wait until sufficient cache write space is available
-      m_pCache->m_space.Wait(5ms);
+      maxSourceRead = maxWrite;
+    }
+
+    ssize_t iRead = m_source.Read(buffer.get(), maxSourceRead);
+    if (!iRead) {
       continue;
     }
 
-    ssize_t iRead = 0;
-    if (maxSourceRead > 0)
-      iRead = m_source.Read(buffer.get(), maxSourceRead);
-    if (iRead <= 0)
+    if (iRead < 0)
     {
       // Check for actual EOF and retry as long as we still have data in our cache
       if (m_writePos < m_fileSize && m_pCache->WaitForData(0, 0ms) > 0)
       {
         CLog::Log(LOGWARNING, "CFileCache::{} - <{}> source read returned {}! Will retry",
                   __FUNCTION__, m_sourcePath, iRead);
-
-        // Wait a bit:
-        if (m_seekEvent.Wait(2000ms))
-        {
-          if (!m_bStop)
-            m_seekEvent.Set(); // hack so that later we realize seek is needed
-        }
-
-        // and retry:
+ 
         continue; // while (!m_bStop)
       }
       else
@@ -394,10 +381,8 @@ void CFileCache::Process()
                   m_sourcePath);
         m_bStop = true;
         break;
-      }
-      else if (iWrite == 0)
-      {
-        m_pCache->m_space.Wait(5ms);
+      } if (iWrite == 0 && m_readEvent.Wait(1ms)) {
+        m_readEvent.Set();
       }
 
       iTotalWrite += iWrite;
@@ -415,22 +400,20 @@ void CFileCache::Process()
 
     // under estimate write rate by a second, to
     // avoid uncertainty at start of caching
-    m_writeRateActual = average.Rate(m_writePos, 1000);
+    m_writeRateActual = m_readRate;
 
    /* NOTE: We can only reliably test for low speed condition, when the cache is *really*
     * filling. This is because as soon as it's full the average-
     * rate will become approximately the current-rate which can flag false
     * low read-rate conditions.
     */
-    if (m_bFilling && m_forwardCacheSize != 0)
+    if (m_forwardCacheSize != 0)
     {
       const int64_t forward = m_pCache->WaitForData(0, 0ms);
       if (forward + m_chunkSize >= m_forwardCacheSize)
       {
         if (m_writeRateActual < m_writeRate)
           m_writeRateLowSpeed = m_writeRateActual;
-
-        m_bFilling = false;
       }
     }
   }
@@ -477,12 +460,40 @@ retry:
   iRc = m_pCache->ReadFromCache((char *)lpBuf, uiBufSize);
   if (iRc > 0)
   {
+    if (iRc > m_readRateMax) {
+      m_readRateMax = iRc;
+    }
+
+    float readRatio;
+    if (m_readRate == 0) {
+      readRatio = 32.0f;
+    } else if (iRc > m_readRate*2) {
+      readRatio = 16.0f;
+    } else if (iRc*2 > m_readRate*3) {
+      readRatio = 8.0f;
+    } else if (iRc*3 > m_readRate*4) {
+      readRatio = 4.0f;
+    } else if (iRc*4 > m_readRate*5) {
+      readRatio = 2.0f;
+     } else {
+      readRatio = m_readRateMax / m_readRate;
+    }
+
+    m_readRate += iRc;
+    m_readRate /= 2;
+    m_readCache = m_readRateMax * readRatio * 1024;
+    if (m_readCache > m_cacheSize) {
+      m_readCache = m_cacheSize;
+    }
+
     m_readPos += iRc;
+    m_readEvent.Set();
     return (int)iRc;
   }
 
   if (iRc == CACHE_RC_WOULD_BLOCK)
   {
+    m_readEvent.Set();
     // just wait for some data to show up
     iRc = m_pCache->WaitForData(1, 10s);
     if (iRc > 0)
@@ -528,6 +539,7 @@ int64_t CFileCache::Seek(int64_t iFilePosition, int iWhence)
   if (iTarget == m_readPos)
     return m_readPos;
 
+  m_readRate = 0;
   if ((m_nSeekResult = m_pCache->Seek(iTarget)) != iTarget)
   {
     if (m_seekPossible == 0)
@@ -537,6 +549,7 @@ int64_t CFileCache::Seek(int64_t iFilePosition, int iWhence)
     m_seekPos = std::min(iTarget, std::max((int64_t)0, m_fileSize - m_chunkSize));
 
     m_seekEvent.Set();
+    m_readEvent.Set();
     while (!m_seekEnded.Wait(100ms))
     {
       // SeekEnded will never be set if FileCache thread is not running
