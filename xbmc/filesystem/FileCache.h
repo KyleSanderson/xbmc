@@ -66,7 +66,6 @@ namespace XFILE
     int64_t m_readPos;
     int64_t m_writePos;
     unsigned m_chunkSize;
-    unsigned m_cacheSize;
     uint32_t m_writeRate;
     uint32_t m_writeRateActual;
     uint32_t m_writeRateLowSpeed;

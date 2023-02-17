@@ -89,7 +89,6 @@ CFileCache::CFileCache(const unsigned int flags)
     m_readPos(0),
     m_writePos(0),
     m_chunkSize(0),
-    m_cacheSize(0),
     m_writeRate(0),
     m_writeRateActual(0),
     m_writeRateLowSpeed(0),
@@ -164,7 +163,7 @@ bool CFileCache::Open(const CURL& url)
       {
         // Cap cache size by filesize, but not for audio/video files as those may grow.
         // We don't need to take into account READ_MULTI_STREAM here as that's only used for audio/video
-        m_cacheSize = cacheSize = m_fileSize;
+        cacheSize = m_fileSize;
 
         // Cap chunk size by cache size
         if (m_chunkSize > cacheSize)
@@ -172,7 +171,7 @@ bool CFileCache::Open(const CURL& url)
       }
       else
       {
-        m_cacheSize = cacheSize = CServiceBroker::GetSettingsComponent()->GetAdvancedSettings()->m_cacheMemSize;
+        cacheSize = CServiceBroker::GetSettingsComponent()->GetAdvancedSettings()->m_cacheMemSize;
 
         // NOTE: READ_MULTI_STREAM is only used with READ_AUDIO_VIDEO
         if (m_flags & READ_MULTI_STREAM)
@@ -222,7 +221,7 @@ bool CFileCache::Open(const CURL& url)
   m_writeRateLowSpeed = 0;
   m_readRate = 0;
   m_readRateMax = 0;
-  m_readCache = m_cacheSize;
+  m_readCache = m_forwardCacheSize;
   m_bFilling = true;
   m_seekEvent.Reset();
   m_seekEnded.Reset();
@@ -482,8 +481,8 @@ retry:
     m_readRate += iRc;
     m_readRate /= 2;
     m_readCache = m_readRateMax * readRatio * 1024;
-    if (m_readCache > m_cacheSize) {
-      m_readCache = m_cacheSize;
+    if (m_readCache > m_forwardCacheSize) {
+      m_readCache = m_forwardCacheSize;
     }
 
     m_readPos += iRc;
