@@ -201,7 +201,7 @@ void CFileCache::Process()
     return;
   }
 
-  CLog::Log(LOGINFO, "CFileCache::{} - <{}> allocated read buffer {}b", __FUNCTION__,
+  CLog::Log(LOGINFO, "CFileCache::{} - <{}> allocated read buffer: {}", __FUNCTION__,
     m_sourcePath, m_chunkSize);
 
   while (!m_bStop)
@@ -241,6 +241,7 @@ void CFileCache::Process()
             "CFileCache::{} - <{}> seek failed to position {}",
              __FUNCTION__, m_sourcePath, m_seekPos);
           m_pCache->Reset(m_source.Seek(0, SEEK_CUR));
+          m_seekPossible = m_source.IoControl(IOCTRL_SEEK_POSSIBLE, NULL);
         }
       }
 
@@ -392,37 +393,44 @@ retry:
       m_readRateMax = iRc;
     }
 
-    float readRatio;
-    if (m_readRate == 0) {
-      readRatio = 32.0f;
-    } else if (iRc > m_readRate*2) {
-      readRatio = 16.0f;
-    } else if (iRc*2 > m_readRate*3) {
-      readRatio = 8.0f;
-    } else if (iRc*3 > m_readRate*4) {
-      readRatio = 4.0f;
-    } else if (iRc*4 > m_readRate*5) {
-      readRatio = 2.0f;
-     } else {
-      readRatio = m_readRateMax / m_readRate;
+    uint64_t readRate = uiBufSize;
+
+    auto peak = m_writeLatency.GetPeak();
+    if (peak) {
+      readRate *= peak;
+      auto avg = m_writeLatency.GetAverage();
+      if (avg > 9) {
+        readRate *= (avg / 10);
+      }
+    } else {
+      readRate *= 500*5; /* 500ms * 50ms average = 2500ms. */
+    }
+
+    if (m_readRateMax - m_readRate != 0) {
+      auto mut = m_readRate;
+      if (!mut) {
+        mut = 1;
+      }
+
+      readRate *= (m_readRateMax / mut);
     }
 
     m_readRate += iRc;
     m_readRate /= 2;
-    m_readCache = m_readRateMax * readRatio * 1024;
 
-    if (m_writeLatency.GetPeak()) {
-      m_readCache += m_readRateMax * m_writeLatency.GetPeak();
-    } else {
-      m_readCache += m_readRateMax * 100;
+    if (readRate > static_cast<uint64_t>(m_forwardCacheSize)) {
+      readRate = m_forwardCacheSize;
     }
 
-    if (m_readCache > m_forwardCacheSize) {
-      m_readCache = m_forwardCacheSize;
-    } else if (m_readCache < m_chunkSize) {
-      m_readCache = m_chunkSize;
+    if (readRate < static_cast<uint64_t>(m_pCache->WaitForData(0, 0ms))) {
+      readRate = m_pCache->WaitForData(0, 0ms);
     }
 
+    if (readRate < m_chunkSize*2) {
+      readRate = m_chunkSize*2;
+    }
+
+    m_readCache = readRate;
     m_readEvent.Set();
     return (int)iRc;
   }
