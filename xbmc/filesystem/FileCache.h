@@ -19,6 +19,46 @@
 
 namespace XFILE
 {
+  class CMeasureLatency {
+  public:
+    CMeasureLatency() :
+      avg_ms(0),
+      peak_ms(0)
+    {};
+  public:
+    std::chrono::time_point<std::chrono::high_resolution_clock> Begin(void) {
+      return this->m.now();
+    }
+
+    uint32_t MeasureLatency(const std::chrono::time_point<std::chrono::high_resolution_clock> &tp) {
+      uint32_t ms = (std::chrono::time_point_cast<std::chrono::milliseconds>(this->m.now()) - std::chrono::time_point_cast<std::chrono::milliseconds>(tp)).count();
+
+      if (ms > this->peak_ms) {
+        this->peak_ms = ms;
+      }
+
+      this->avg_ms += ms;
+      this->avg_ms /= 2;
+      return ms;
+    }
+
+    uint32_t GetAverage(void) {
+      return this->avg_ms;
+    }
+
+    uint32_t GetPeak(void) {
+      return this->peak_ms;
+    }
+
+    void Reset(void) {
+      this->avg_ms = 0;
+      this->peak_ms = 0;
+    }
+  private:
+    std::chrono::high_resolution_clock m;
+    uint32_t avg_ms;
+    uint32_t peak_ms;
+  };
 
   class CFileCache : public IFile, public CThread
   {
@@ -63,12 +103,11 @@ namespace XFILE
     CEvent m_seekEnded;
     int64_t m_nSeekResult;
     int64_t m_seekPos;
-    int64_t m_readPos;
-    int64_t m_writePos;
     unsigned m_chunkSize;
     uint32_t m_writeRate;
     uint32_t m_writeRateActual;
     uint32_t m_writeRateLowSpeed;
+    CMeasureLatency m_writeLatency;
     CEvent m_readEvent;
     uint32_t m_readRate;
     uint32_t m_readRateMax;
