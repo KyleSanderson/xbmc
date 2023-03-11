@@ -23434,3 +23434,39 @@ msgstr ""
 msgctxt "#39191"
 msgid "HDR"
 msgstr ""
+
+#. Title of Dolby Vision RPU conversion setting
+#: system/settings/settings.xml
+msgctxt "#39192"
+msgid "Convert Dolby Vision for compatibility"
+msgstr ""
+
+#. Help text for setting "Convert Dolby Vision for compatibility" of label #39192
+#: system/settings/settings.xml
+msgctxt "#39193"
+msgid "Converts Dolby Vision profile 7 to profile 8.1, ignores enhancement layer"
+msgstr ""
+
+#. Title of allowed HDR types setting
+#: system/settings/settings.xml
+msgctxt "#39194"
+msgid "Allowed HDR types"
+msgstr ""
+
+#. Help text for setting "Allowed HDR types" of label #39194
+#: system/settings/settings.xml
+msgctxt "#39195"
+msgid "Alters the video bitstream to remove HDR10+ or Dolby Vision metadata"
+msgstr ""
+
+#. Label of HDR10+ option for setting "Allowed HDR types"
+#: system/settings/settings.xml
+msgctxt "#39196"
+msgid "HDR10+"
+msgstr ""
+
+#. Label of Dolby Vision option for setting "Allowed HDR types"
+#: system/settings/settings.xml
+msgctxt "#39197"
+msgid "Dolby Vision"
+msgstr ""

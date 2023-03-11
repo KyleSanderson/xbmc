@@ -25,6 +25,8 @@
 #include "messaging/ApplicationMessenger.h"
 #include "settings/Settings.h"
 #include "settings/SettingsComponent.h"
+#include "settings/SettingUtils.h"
+#include "settings/lib/Setting.h"
 #include "utils/BitstreamConverter.h"
 #include "utils/BitstreamWriter.h"
 #include "utils/CPUInfo.h"
@@ -522,6 +524,15 @@ bool CDVDVideoCodecAndroidMediaCodec::Open(CDVDStreamInfo &hints, CDVDCodecOptio
       m_mime = "video/hevc";
       m_formatname = "amc-hevc";
 
+      const std::shared_ptr<CSettingList> allowedHdrTypesSetting(
+          std::dynamic_pointer_cast<CSettingList>(
+              CServiceBroker::GetSettingsComponent()->GetSettings()->GetSetting(
+                  CSettings::SETTING_VIDEOPLAYER_ALLOWEDHDRTYPES)));
+      bool removeHdr10Plus = !CSettingUtils::FindIntInList(
+          allowedHdrTypesSetting, CSettings::VIDEOPLAYER_ALLOWED_HDR_TYPE_HDR10PLUS);
+      bool removeDovi = !CSettingUtils::FindIntInList(
+          allowedHdrTypesSetting, CSettings::VIDEOPLAYER_ALLOWED_HDR_TYPE_DOLBY_VISION);
+
       bool isDvhe = (m_hints.codec_tag == MKTAG('d', 'v', 'h', 'e'));
       bool isDvh1 = (m_hints.codec_tag == MKTAG('d', 'v', 'h', '1'));
 
@@ -535,7 +546,7 @@ bool CDVDVideoCodecAndroidMediaCodec::Open(CDVDStreamInfo &hints, CDVDCodecOptio
           isDvhe = true;
       }
 
-      if (isDvhe || isDvh1)
+      if (!removeDovi && (isDvhe || isDvh1))
       {
         bool displaySupportsDovi = CAndroidUtils::GetDisplayHDRCapabilities().SupportsDolbyVision();
         bool mediaCodecSupportsDovi =
@@ -562,7 +573,18 @@ bool CDVDVideoCodecAndroidMediaCodec::Open(CDVDStreamInfo &hints, CDVDCodecOptio
         {
           m_bitstream.reset();
         }
+
+        if (m_bitstream)
+        {
+          m_bitstream->SetRemoveHdr10Plus(removeHdr10Plus);
+          m_bitstream->SetRemoveDovi(removeDovi);
+
+          bool convertDovi = CServiceBroker::GetSettingsComponent()->GetSettings()->GetBool(
+              CSettings::SETTING_VIDEOPLAYER_CONVERTDOVI);
+          m_bitstream->SetConvertDovi(convertDovi);
+        }
       }
+
       break;
     }
     case AV_CODEC_ID_WMV3:

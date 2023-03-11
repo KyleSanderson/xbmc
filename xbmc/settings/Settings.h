@@ -129,6 +129,8 @@ public:
   static constexpr auto SETTING_VIDEOPLAYER_USESTAGEFRIGHT = "videoplayer.usestagefright";
   static constexpr auto SETTING_VIDEOPLAYER_LIMITGUIUPDATE = "videoplayer.limitguiupdate";
   static constexpr auto SETTING_VIDEOPLAYER_SUPPORTMVC = "videoplayer.supportmvc";
+  static constexpr auto SETTING_VIDEOPLAYER_CONVERTDOVI = "videoplayer.convertdovi";
+  static constexpr auto SETTING_VIDEOPLAYER_ALLOWEDHDRTYPES = "videoplayer.allowedhdrtypes";
   static constexpr auto SETTING_MYVIDEOS_SELECTACTION = "myvideos.selectaction";
   static constexpr auto SETTING_MYVIDEOS_USETAGS = "myvideos.usetags";
   static constexpr auto SETTING_MYVIDEOS_EXTRACTFLAGS = "myvideos.extractflags";
@@ -472,6 +474,10 @@ public:
   static const int MUSICLIBRARY_ARTWORK_LEVEL_BASIC = 1;
   static const int MUSICLIBRARY_ARTWORK_LEVEL_CUSTOM = 2;
   static const int MUSICLIBRARY_ARTWORK_LEVEL_NONE = 3;
+
+  // values for SETTING_VIDEOPLAYER_ALLOWEDHDRTYPES
+  static const int VIDEOPLAYER_ALLOWED_HDR_TYPE_HDR10PLUS = 0;
+  static const int VIDEOPLAYER_ALLOWED_HDR_TYPE_DOLBY_VISION = 1;
 
   /*!
    \brief Creates a new settings wrapper around a new settings manager.
