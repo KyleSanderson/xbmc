@@ -96,6 +96,7 @@ public:
   int               GetExtraSize() const;
   void              ResetStartDecode(void);
   bool              CanStartDecode() const;
+  void SetConvertDovi(bool value) { m_convert_dovi = value; }
 
   static bool       mpeg2_sequence_header(const uint8_t *data, const uint32_t size, mpeg2_sequence *sequence);
 
@@ -141,4 +142,5 @@ protected:
   bool              m_convert_bytestream;
   AVCodecID         m_codec;
   bool              m_start_decode;
+  bool m_convert_dovi;
 };
