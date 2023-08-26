@@ -22,6 +22,8 @@
 #include "messaging/ApplicationMessenger.h"
 #include "settings/AdvancedSettings.h"
 #include "settings/DisplaySettings.h"
+#include "settings/Settings.h"
+#include "settings/SettingsComponent.h"
 #include "windowing/GraphicContext.h"
 
 #include <mutex>
@@ -291,6 +293,16 @@ void CXBMCApp::onResume()
   if (g_application.IsInitialized() &&
       CServiceBroker::GetWinSystem()->GetOSScreenSaver()->IsInhibited())
     KeepScreenOn(true);
+
+  // Reset shutdown timer on wake up
+  if (g_application.IsInitialized() &&
+      CServiceBroker::GetSettingsComponent()->GetSettings()->GetInt(
+          CSettings::SETTING_POWERMANAGEMENT_SHUTDOWNTIME))
+  {
+    auto& components = CServiceBroker::GetAppComponents();
+    const auto appPower = components.GetComponent<CApplicationPowerHandling>();
+    appPower->ResetShutdownTimers();
+  }
 
   m_headsetPlugged = isHeadsetPlugged();
 
@@ -565,7 +577,7 @@ bool CXBMCApp::AcquireAudioFocus()
   }
   if (result != CJNIAudioManager::AUDIOFOCUS_REQUEST_GRANTED)
   {
-    CXBMCApp::android_printf("Audio Focus request failed");
+    android_printf("Audio Focus request failed");
     return false;
   }
   return true;
@@ -601,7 +613,7 @@ bool CXBMCApp::ReleaseAudioFocus()
 
   if (result != CJNIAudioManager::AUDIOFOCUS_REQUEST_GRANTED)
   {
-    CXBMCApp::android_printf("Audio Focus abandon failed");
+    android_printf("Audio Focus abandon failed");
     return false;
   }
   return true;
@@ -722,18 +734,14 @@ void CXBMCApp::SetRefreshRate(float rate)
   }
 
   m_refreshRate = rate;
-
   m_displayChangeEvent.Reset();
+
+  if (m_hdmiSource)
+    dynamic_cast<CWinSystemAndroid*>(CServiceBroker::GetWinSystem())->InitiateModeChange();
+
   CVariant *variant = new CVariant(rate);
   runNativeOnUiThread(SetRefreshRateCallback, variant);
-  if (g_application.IsInitialized())
-  {
-    m_displayChangeEvent.Wait(5000ms);
-    const auto& components = CServiceBroker::GetAppComponents();
-    const auto appPlayer = components.GetComponent<CApplicationPlayer>();
-    if (m_hdmiSource && appPlayer->IsPlaying())
-      dynamic_cast<CWinSystemAndroid*>(CServiceBroker::GetWinSystem())->InitiateModeChange();
-  }
+  m_displayChangeEvent.Wait(5000ms);
 }
 
 void CXBMCApp::SetDisplayMode(int mode, float rate)
@@ -750,31 +758,31 @@ void CXBMCApp::SetDisplayMode(int mode, float rate)
   }
 
   m_displayChangeEvent.Reset();
+
+  if (m_hdmiSource)
+    dynamic_cast<CWinSystemAndroid*>(CServiceBroker::GetWinSystem())->InitiateModeChange();
+
   std::map<std::string, CVariant> vmap;
   vmap["mode"] = mode;
   m_refreshRate = rate;
   CVariant *variant = new CVariant(vmap);
   runNativeOnUiThread(SetDisplayModeCallback, variant);
   if (g_application.IsInitialized())
-  {
     m_displayChangeEvent.Wait(5000ms);
-    const auto& components = CServiceBroker::GetAppComponents();
-    const auto appPlayer = components.GetComponent<CApplicationPlayer>();
-    if (m_hdmiSource && appPlayer->IsPlaying())
-      dynamic_cast<CWinSystemAndroid*>(CServiceBroker::GetWinSystem())->InitiateModeChange();
-  }
 }
 
-int CXBMCApp::android_printf(const char *format, ...)
+int CXBMCApp::android_printf(const char* format, ...)
 {
   // For use before CLog is setup by XBMC_Run()
-  va_list args;
+  va_list args, args_copy;
   va_start(args, format);
+  va_copy(args_copy, args);
   int result;
+
   if (CServiceBroker::IsLoggingUp())
   {
     std::string message;
-    int len = vsnprintf(0, 0, format, args);
+    int len = vsnprintf(0, 0, format, args_copy);
     message.resize(len);
     result = vsnprintf(&message[0], len + 1, format, args);
     CLog::Log(LOGDEBUG, message);
@@ -783,7 +791,10 @@ int CXBMCApp::android_printf(const char *format, ...)
   {
     result = __android_log_vprint(ANDROID_LOG_VERBOSE, "Kodi", format, args);
   }
+
+  va_end(args_copy);
   va_end(args);
+
   return result;
 }
 
@@ -973,19 +984,23 @@ std::vector<androidPackage> CXBMCApp::GetApplications() const
   std::unique_lock<CCriticalSection> lock(m_applicationsMutex);
   if (m_applications.empty())
   {
-    CJNIList<CJNIApplicationInfo> packageList = GetPackageManager().getInstalledApplications(CJNIPackageManager::GET_ACTIVITIES);
+    CJNIList<CJNIApplicationInfo> packageList =
+        GetPackageManager().getInstalledApplications(CJNIPackageManager::GET_ACTIVITIES);
     int numPackages = packageList.size();
     for (int i = 0; i < numPackages; i++)
     {
-      CJNIIntent intent = GetPackageManager().getLaunchIntentForPackage(packageList.get(i).packageName);
-      if (!intent && CJNIBuild::SDK_INT >= 21)
-        intent = GetPackageManager().getLeanbackLaunchIntentForPackage(packageList.get(i).packageName);
+      CJNIIntent intent =
+          GetPackageManager().getLaunchIntentForPackage(packageList.get(i).packageName);
+      if (!intent)
+        intent =
+            GetPackageManager().getLeanbackLaunchIntentForPackage(packageList.get(i).packageName);
       if (!intent)
         continue;
 
       androidPackage newPackage;
       newPackage.packageName = packageList.get(i).packageName;
-      newPackage.packageLabel = GetPackageManager().getApplicationLabel(packageList.get(i)).toString();
+      newPackage.packageLabel =
+          GetPackageManager().getApplicationLabel(packageList.get(i)).toString();
       newPackage.icon = packageList.get(i).icon;
       m_applications.emplace_back(newPackage);
     }
@@ -1391,9 +1406,12 @@ void CXBMCApp::onReceive(CJNIIntent intent)
   {
     if (g_application.IsInitialized())
     {
-      CNetworkBase& net = CServiceBroker::GetNetwork();
-      CNetworkAndroid* netdroid = static_cast<CNetworkAndroid*>(&net);
-      netdroid->RetrieveInterfaces();
+      if (CJNIBase::GetSDKVersion() < 24)
+      {
+        CNetworkBase& net = CServiceBroker::GetNetwork();
+        CNetworkAndroid* netdroid = static_cast<CNetworkAndroid*>(&net);
+        netdroid->RetrieveInterfaces();
+      }
     }
   }
 }
@@ -1492,7 +1510,7 @@ void CXBMCApp::onVolumeChanged(int volume)
 
 void CXBMCApp::onAudioFocusChange(int focusChange)
 {
-  CXBMCApp::android_printf("Audio Focus changed: %d", focusChange);
+  android_printf("Audio Focus changed: %d", focusChange);
   if (focusChange == CJNIAudioManager::AUDIOFOCUS_LOSS)
   {
     if ((m_playback_state & PLAYBACK_STATE_PLAYING))

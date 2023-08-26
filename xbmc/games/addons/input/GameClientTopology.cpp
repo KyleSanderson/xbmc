@@ -18,7 +18,7 @@
 using namespace KODI;
 using namespace GAME;
 
-#define CONTROLLER_ADDRESS_SEPARATOR "/"
+#define CONTROLLER_ADDRESS_SEPARATOR '/'
 
 CGameClientTopology::CGameClientTopology(GameClientPortVec ports, int playerLimit)
   : m_ports(std::move(ports)), m_playerLimit(playerLimit), m_controllers(GetControllerTree(m_ports))
@@ -107,4 +107,24 @@ std::string CGameClientTopology::MakeAddress(const std::string& baseAddress,
   address << CONTROLLER_ADDRESS_SEPARATOR << nodeId;
 
   return address.str();
+}
+
+std::pair<std::string, std::string> CGameClientTopology::SplitAddress(
+    const std::string& nodeAddress)
+{
+  std::string baseAddress;
+  std::string nodeId;
+
+  size_t separatorPos = nodeAddress.find_last_of(CONTROLLER_ADDRESS_SEPARATOR);
+  if (separatorPos != std::string::npos)
+  {
+    baseAddress = nodeAddress.substr(0, separatorPos);
+    nodeId = nodeAddress.substr(separatorPos + 1);
+  }
+  else
+  {
+    baseAddress = nodeAddress;
+  }
+
+  return std::make_pair(baseAddress, nodeId);
 }

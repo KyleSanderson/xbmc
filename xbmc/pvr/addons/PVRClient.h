@@ -16,6 +16,7 @@
 #include <atomic>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -488,11 +489,16 @@ public:
   PVR_ERROR UpdateTimer(const CPVRTimerInfoTag& timer);
 
   /*!
-   * @brief Get all timer types supported by the backend.
-   * @param results The container to store the result in.
+   * @brief Update all timer types supported by the backend.
    * @return PVR_ERROR_NO_ERROR if the list has been fetched successfully.
    */
-  PVR_ERROR GetTimerTypes(std::vector<std::shared_ptr<CPVRTimerType>>& results) const;
+  PVR_ERROR UpdateTimerTypes();
+
+  /*!
+   * @brief Get the timer types supported by the backend, without updating them from the backend.
+   * @return the types.
+   */
+  const std::vector<std::shared_ptr<CPVRTimerType>>& GetTimerTypes() const;
 
   //@}
   /** @name PVR live stream methods */
@@ -1042,8 +1048,7 @@ private:
       m_ignoreClient; /*!< signals to PVRManager to ignore this client until it has been connected */
   std::vector<std::shared_ptr<CPVRTimerType>>
       m_timertypes; /*!< timer types supported by this backend */
-  mutable int m_iPriority; /*!< priority of the client */
-  mutable bool m_bPriorityFetched;
+  mutable std::optional<int> m_priority; /*!< priority of the client */
 
   /* cached data */
   std::string m_strBackendName; /*!< the cached backend version */

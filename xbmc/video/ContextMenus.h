@@ -33,6 +33,11 @@ struct CTVShowInfo : CVideoInfo
   CTVShowInfo() : CVideoInfo(MediaTypeTvShow) {}
 };
 
+struct CSeasonInfo : CVideoInfo
+{
+  CSeasonInfo() : CVideoInfo(MediaTypeSeason) {}
+};
+
 struct CEpisodeInfo : CVideoInfo
 {
   CEpisodeInfo() : CVideoInfo(MediaTypeEpisode) {}
@@ -46,6 +51,11 @@ struct CMusicVideoInfo : CVideoInfo
 struct CMovieInfo : CVideoInfo
 {
   CMovieInfo() : CVideoInfo(MediaTypeMovie) {}
+};
+
+struct CMovieSetInfo : CVideoInfo
+{
+  CMovieSetInfo() : CVideoInfo(MediaTypeVideoCollection) {}
 };
 
 struct CVideoRemoveResumePoint : CStaticContextMenuAction
@@ -104,9 +114,9 @@ struct CVideoPlayNext : CStaticContextMenuAction
   bool Execute(const std::shared_ptr<CFileItem>& item) const override;
 };
 
-struct CVideoPlayAndQueue : CStaticContextMenuAction
+struct CVideoPlayAndQueue : IContextMenuItem
 {
-  CVideoPlayAndQueue() : CStaticContextMenuAction(13412) {} // Play from here
+  std::string GetLabel(const CFileItem& item) const override;
   bool IsVisible(const CFileItem& item) const override;
   bool Execute(const std::shared_ptr<CFileItem>& item) const override;
 };

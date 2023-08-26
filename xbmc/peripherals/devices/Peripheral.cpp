@@ -24,7 +24,7 @@
 #include "settings/lib/Setting.h"
 #include "utils/FileUtils.h"
 #include "utils/StringUtils.h"
-#include "utils/XBMCTinyXML.h"
+#include "utils/XBMCTinyXML2.h"
 #include "utils/XMLUtils.h"
 #include "utils/log.h"
 
@@ -54,9 +54,6 @@ CPeripheral::CPeripheral(CPeripherals& manager,
     m_iVendorId(scanResult.m_iVendorId),
     m_iProductId(scanResult.m_iProductId),
     m_strVersionInfo(g_localizeStrings.Get(13205)), // "unknown"
-    m_bInitialised(false),
-    m_bHidden(false),
-    m_bError(false),
     m_bus(bus)
 {
   PeripheralTypeTranslator::FormatHexString(scanResult.m_iVendorId, m_strVendorId);
@@ -151,10 +148,10 @@ bool CPeripheral::Initialise(void)
 
   if (m_iVendorId == 0x0000 && m_iProductId == 0x0000)
   {
-    m_strSettingsFile =
-        StringUtils::Format("special://profile/peripheral_data/{}_{}.xml",
-                            PeripheralTypeTranslator::BusTypeToString(m_mappedBusType),
-                            CUtil::MakeLegalFileName(safeDeviceName, LEGAL_WIN32_COMPAT));
+    m_strSettingsFile = StringUtils::Format(
+        "special://profile/peripheral_data/{}_{}.xml",
+        PeripheralTypeTranslator::BusTypeToString(m_mappedBusType),
+        CUtil::MakeLegalFileName(std::move(safeDeviceName), LEGAL_WIN32_COMPAT));
   }
   else
   {
@@ -167,7 +164,7 @@ bool CPeripheral::Initialise(void)
       m_strSettingsFile = StringUtils::Format(
           "special://profile/peripheral_data/{}_{}_{}_{}.xml",
           PeripheralTypeTranslator::BusTypeToString(m_mappedBusType), m_strVendorId, m_strProductId,
-          CUtil::MakeLegalFileName(safeDeviceName, LEGAL_WIN32_COMPAT));
+          CUtil::MakeLegalFileName(std::move(safeDeviceName), LEGAL_WIN32_COMPAT));
   }
 
   LoadPersistedSettings();
@@ -487,13 +484,19 @@ bool CPeripheral::SetSetting(const std::string& strKey, const std::string& strVa
 
 void CPeripheral::PersistSettings(bool bExiting /* = false */)
 {
-  CXBMCTinyXML doc;
-  TiXmlElement node("settings");
+  CXBMCTinyXML2 doc;
+  auto* node = doc.NewElement("settings");
+  if (node == nullptr)
+    return;
+
   doc.InsertEndChild(node);
   for (const auto& itr : m_settings)
   {
-    TiXmlElement nodeSetting("setting");
-    nodeSetting.SetAttribute("id", itr.first.c_str());
+    auto* nodeSetting = doc.NewElement("setting");
+    if (nodeSetting == nullptr)
+      continue;
+
+    nodeSetting->SetAttribute("id", itr.first.c_str());
     std::string strValue;
     switch (itr.second.m_setting->GetType())
     {
@@ -532,7 +535,7 @@ void CPeripheral::PersistSettings(bool bExiting /* = false */)
       default:
         break;
     }
-    nodeSetting.SetAttribute("value", strValue.c_str());
+    nodeSetting->SetAttribute("value", strValue.c_str());
     doc.RootElement()->InsertEndChild(nodeSetting);
   }
 
@@ -548,11 +551,11 @@ void CPeripheral::PersistSettings(bool bExiting /* = false */)
 
 void CPeripheral::LoadPersistedSettings(void)
 {
-  CXBMCTinyXML doc;
+  CXBMCTinyXML2 doc;
   if (doc.LoadFile(m_strSettingsFile))
   {
-    const TiXmlElement* setting = doc.RootElement()->FirstChildElement("setting");
-    while (setting)
+    const auto* setting = doc.RootElement()->FirstChildElement("setting");
+    while (setting != nullptr)
     {
       std::string strId = XMLUtils::GetAttribute(setting, "id");
       std::string strValue = XMLUtils::GetAttribute(setting, "value");

@@ -48,6 +48,7 @@
 #include "addons/Skin.h"
 #include "cores/RetroPlayer/guicontrols/GUIGameControl.h"
 #include "games/controllers/guicontrols/GUIGameController.h"
+#include "games/controllers/guicontrols/GUIGameControllerList.h"
 #include "input/Key.h"
 #include "pvr/guilib/GUIEPGGridContainer.h"
 #include "utils/CharsetConverter.h"
@@ -74,6 +75,7 @@ static const ControlMapping controls[] = {
     {"fadelabel", CGUIControl::GUICONTROL_FADELABEL},
     {"fixedlist", CGUIControl::GUICONTAINER_FIXEDLIST},
     {"gamecontroller", CGUIControl::GUICONTROL_GAMECONTROLLER},
+    {"gamecontrollerlist", CGUIControl::GUICONTROL_GAMECONTROLLERLIST},
     {"gamewindow", CGUIControl::GUICONTROL_GAME},
     {"group", CGUIControl::GUICONTROL_GROUP},
     {"group", CGUIControl::GUICONTROL_LISTGROUP},
@@ -749,7 +751,8 @@ CGUIControl* CGUIControlFactory::Create(int parentID, const CRect &rect, TiXmlEl
   bool bReverse = true;
   bool bReveal = false;
   CTextureInfo textureBackground, textureLeft, textureRight, textureMid, textureOverlay;
-  CTextureInfo textureNib, textureNibFocus, textureBar, textureBarFocus;
+  CTextureInfo textureNib, textureNibFocus, textureNibDisabled, textureBar, textureBarFocus,
+      textureBarDisabled;
   CTextureInfo textureUp, textureDown;
   CTextureInfo textureUpFocus, textureDownFocus;
   CTextureInfo textureUpDisabled, textureDownDisabled;
@@ -974,8 +977,12 @@ CGUIControl* CGUIControlFactory::Create(int parentID, const CRect &rect, TiXmlEl
   GetTexture(pControlNode, "texturesliderbackground", textureBackground);
   GetTexture(pControlNode, "texturesliderbar", textureBar);
   GetTexture(pControlNode, "texturesliderbarfocus", textureBarFocus);
+  if (!GetTexture(pControlNode, "texturesliderbardisabled", textureBarDisabled))
+    GetTexture(pControlNode, "texturesliderbar", textureBarDisabled); // backward compatibility
   GetTexture(pControlNode, "textureslidernib", textureNib);
   GetTexture(pControlNode, "textureslidernibfocus", textureNibFocus);
+  if (!GetTexture(pControlNode, "textureslidernibdisabled", textureNibDisabled))
+    GetTexture(pControlNode, "textureslidernib", textureNibDisabled); // backward compatibility
 
   GetTexture(pControlNode, "texturecolormask", textureColorMask);
   GetTexture(pControlNode, "texturecolordisabledmask", textureColorDisabledMask);
@@ -1350,8 +1357,8 @@ CGUIControl* CGUIControlFactory::Create(int parentID, const CRect &rect, TiXmlEl
   case CGUIControl::GUICONTROL_SLIDER:
     {
       control = new CGUISliderControl(
-        parentID, id, posX, posY, width, height,
-        textureBar, textureNib, textureNibFocus, SLIDER_CONTROL_TYPE_PERCENTAGE, orientation);
+          parentID, id, posX, posY, width, height, textureBar, textureBarDisabled, textureNib,
+          textureNibFocus, textureNibDisabled, SLIDER_CONTROL_TYPE_PERCENTAGE, orientation);
 
       static_cast<CGUISliderControl*>(control)->SetInfo(singleInfo);
       static_cast<CGUISliderControl*>(control)->SetAction(action);
@@ -1360,8 +1367,9 @@ CGUIControl* CGUIControlFactory::Create(int parentID, const CRect &rect, TiXmlEl
   case CGUIControl::GUICONTROL_SETTINGS_SLIDER:
     {
       control = new CGUISettingsSliderControl(
-        parentID, id, posX, posY, width, height, sliderWidth, sliderHeight, textureFocus, textureNoFocus,
-        textureBar, textureNib, textureNibFocus, labelInfo, SLIDER_CONTROL_TYPE_PERCENTAGE);
+          parentID, id, posX, posY, width, height, sliderWidth, sliderHeight, textureFocus,
+          textureNoFocus, textureBar, textureBarDisabled, textureNib, textureNibFocus,
+          textureNibDisabled, labelInfo, SLIDER_CONTROL_TYPE_PERCENTAGE);
 
       static_cast<CGUISettingsSliderControl*>(control)->SetText(strLabel);
       static_cast<CGUISettingsSliderControl*>(control)->SetInfo(singleInfo);
@@ -1549,8 +1557,66 @@ CGUIControl* CGUIControlFactory::Create(int parentID, const CRect &rect, TiXmlEl
     control = new CGUIRenderingControl(parentID, id, posX, posY, width, height);
     break;
   case CGUIControl::GUICONTROL_GAMECONTROLLER:
-    control = new GAME::CGUIGameController(parentID, id, posX, posY, width, height);
+  {
+    control = new GAME::CGUIGameController(parentID, id, posX, posY, width, height, texture);
+
+    GAME::CGUIGameController* gcontrol = static_cast<GAME::CGUIGameController*>(control);
+
+    // Set texture
+    gcontrol->SetInfo(textureFile);
+
+    // Set aspect ratio
+    gcontrol->SetAspectRatio(aspect);
+
+    // Set controller ID
+    GUIINFO::CGUIInfoLabel controllerId;
+    GetInfoLabel(pControlNode, "controllerid", controllerId, parentID);
+    gcontrol->SetControllerID(controllerId);
+
+    // Set controller address
+    GUIINFO::CGUIInfoLabel controllerAddress;
+    GetInfoLabel(pControlNode, "controlleraddress", controllerAddress, parentID);
+    gcontrol->SetControllerAddress(controllerAddress);
+
+    // Set controller diffuse color
+    GUIINFO::CGUIInfoColor controllerDiffuse(0xFFFFFFFF);
+    GetInfoColor(pControlNode, "controllerdiffuse", controllerDiffuse, parentID);
+    gcontrol->SetControllerDiffuse(controllerDiffuse);
+
+    // Set port address
+    GUIINFO::CGUIInfoLabel portAddress;
+    GetInfoLabel(pControlNode, "portaddress", portAddress, parentID);
+    gcontrol->SetPortAddress(portAddress);
+
+    // Set peripheral location
+    GUIINFO::CGUIInfoLabel peripheralLocation;
+    GetInfoLabel(pControlNode, "peripherallocation", peripheralLocation, parentID);
+    gcontrol->SetPeripheralLocation(peripheralLocation);
+
     break;
+  }
+  case CGUIControl::GUICONTROL_GAMECONTROLLERLIST:
+  {
+    CScroller scroller;
+    GetScroller(pControlNode, "scrolltime", scroller);
+
+    control = new GAME::CGUIGameControllerList(parentID, id, posX, posY, width, height, orientation,
+                                               labelInfo.align, scroller);
+
+    GAME::CGUIGameControllerList* lcontrol = static_cast<GAME::CGUIGameControllerList*>(control);
+
+    lcontrol->LoadLayout(pControlNode);
+    lcontrol->LoadListProvider(pControlNode, defaultControl, defaultAlways);
+    lcontrol->SetType(viewType, viewLabel);
+    lcontrol->SetPageControl(pageControl);
+    lcontrol->SetRenderOffset(offset);
+    lcontrol->SetAutoScrolling(pControlNode);
+    lcontrol->SetClickActions(clickActions);
+    lcontrol->SetFocusActions(focusActions);
+    lcontrol->SetUnFocusActions(unfocusActions);
+
+    break;
+  }
   case CGUIControl::GUICONTROL_COLORBUTTON:
   {
     control = new CGUIColorButtonControl(parentID, id, posX, posY, width, height, textureFocus,

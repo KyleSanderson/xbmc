@@ -33,10 +33,15 @@ public:
   bool OnMessage(CGUIMessage& message) override;
   bool OnAction(const CAction &action) override;
 
-  void PlayMovie(const CFileItem* item, const std::string& player = "");
-
-  virtual void OnItemInfo(const CFileItem& fileItem, ADDON::ScraperPtr& scraper);
-
+  /*! \brief Gets called to process the "info" action for the given file item
+   Default implementation shows a dialog containing information for the movie/episode/...
+   represented by the file item.
+   \param fileItem the item for which information is to be presented.
+   \param scraper a scraper addon instance that can be used to obtain additional information for
+   the given item
+   \return true if information was presented, false otherwise.
+   */
+  virtual bool OnItemInfo(const CFileItem& fileItem, ADDON::ScraperPtr& scraper);
 
   /*! \brief Show the resume menu for this item (if it has a resume bookmark)
    If a resume bookmark is found, we set the item's m_lStartOffset to STARTOFFSET_RESUME.
@@ -70,6 +75,16 @@ public:
    \return string containing the resume position or an empty string if there is no resume position
    */
   static std::string GetResumeString(const CFileItem &item);
+
+  /*! \brief Load video information from the database for these items (public static version)
+   Useful for grabbing information for file listings, from watched status to full metadata
+   \param items the items to load information for.
+   \param database open database object to retrieve the data from
+   \param allowReplaceLabels allow label replacement if according GUI setting is enabled
+   */
+  static void LoadVideoInfo(CFileItemList& items,
+                            CVideoDatabase& database,
+                            bool allowReplaceLabels = true);
 
 protected:
   void OnScan(const std::string& strPath, bool scanAll = false);

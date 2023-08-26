@@ -81,7 +81,7 @@ private:
 };
 
 class CXBMCApp : public IActivityHandler,
-                 public CJNIMainActivity,
+                 public jni::CJNIMainActivity,
                  public CJNIBroadcastReceiver,
                  public ANNOUNCEMENT::IAnnouncer,
                  public CJNISurfaceHolderCallback
@@ -124,8 +124,6 @@ public:
   jni::jhobject getDisplayListener() { return m_displayListener.get_raw(); }
 
   bool isValid() { return m_activity != NULL; }
-
-  int32_t GetSDKVersion() const { return m_activity->sdkVersion; }
 
   void onStart() override;
   void onResume() override;
@@ -235,9 +233,9 @@ private:
 
   CXBMCApp(ANativeActivity* nativeActivity, IInputHandler& inputhandler);
 
-  CJNIXBMCAudioManagerOnAudioFocusChangeListener m_audioFocusListener;
-  CJNIXBMCDisplayManagerDisplayListener m_displayListener;
-  std::unique_ptr<CJNIXBMCMainView> m_mainView;
+  jni::CJNIXBMCAudioManagerOnAudioFocusChangeListener m_audioFocusListener;
+  jni::CJNIXBMCDisplayManagerDisplayListener m_displayListener;
+  std::unique_ptr<jni::CJNIXBMCMainView> m_mainView;
   std::unique_ptr<jni::CJNIXBMCMediaSession> m_mediaSession;
   std::string GetFilenameFromIntent(const CJNIIntent &intent);
 

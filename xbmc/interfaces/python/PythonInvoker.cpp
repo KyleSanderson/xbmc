@@ -84,7 +84,7 @@ static const std::string getListOfAddonClassesAsString(
 }
 
 CPythonInvoker::CPythonInvoker(ILanguageInvocationHandler* invocationHandler)
-  : ILanguageInvoker(invocationHandler), m_threadState(NULL), m_stop(false)
+  : ILanguageInvoker(invocationHandler), m_threadState(NULL)
 {
 }
 
@@ -130,7 +130,7 @@ bool CPythonInvoker::execute(const std::string& script, const std::vector<std::s
   for (const auto& argument : arguments)
   {
     std::wstring w_argument;
-    g_charsetConverter.utf8ToW(argument, w_argument);
+    g_charsetConverter.utf8ToW(argument, w_argument, false);
     w_arguments.push_back(w_argument);
   }
   return execute(script, w_arguments);
@@ -222,29 +222,30 @@ bool CPythonInvoker::execute(const std::string& script, std::vector<std::wstring
     }
 
     PyObject* sysPath = PySys_GetObject("path");
-    Py_ssize_t listSize = PyList_Size(sysPath);
 
-    if (listSize > 0)
-      CLog::Log(LOGDEBUG, "CPythonInvoker({}): default python path:", GetId());
+    std::for_each(pythonPath.crbegin(), pythonPath.crend(),
+                  [&sysPath](const auto& path)
+                  {
+                    PyObject* pyPath = PyUnicode_FromString(path.c_str());
+                    PyList_Insert(sysPath, 0, pyPath);
 
-    for (Py_ssize_t index = 0; index < listSize; index++)
+                    Py_DECREF(pyPath);
+                  });
+
+    CLog::Log(LOGDEBUG, "CPythonInvoker({}): full python path:", GetId());
+
+    Py_ssize_t pathListSize = PyList_Size(sysPath);
+
+    for (Py_ssize_t index = 0; index < pathListSize; index++)
     {
+      if (index == 0 && !pythonPath.empty())
+        CLog::Log(LOGDEBUG, "CPythonInvoker({}):   custom python path:", GetId());
+
+      if (index == static_cast<ssize_t>(pythonPath.size()))
+        CLog::Log(LOGDEBUG, "CPythonInvoker({}):   default python path:", GetId());
+
       PyObject* pyPath = PyList_GetItem(sysPath, index);
-
-      CLog::Log(LOGDEBUG, "CPythonInvoker({}):   {}", GetId(), PyUnicode_AsUTF8(pyPath));
-    }
-
-    if (!pythonPath.empty())
-      CLog::Log(LOGDEBUG, "CPythonInvoker({}): adding path:", GetId());
-
-    for (const auto& path : pythonPath)
-    {
-      PyObject* pyPath = PyUnicode_FromString(path.c_str());
-      PyList_Append(sysPath, pyPath);
-
-      CLog::Log(LOGDEBUG, "CPythonInvoker({}):  {}", GetId(), PyUnicode_AsUTF8(pyPath));
-
-      Py_DECREF(pyPath);
+      CLog::Log(LOGDEBUG, "CPythonInvoker({}):     {}", GetId(), PyUnicode_AsUTF8(pyPath));
     }
 
     { // set the m_threadState to this new interp

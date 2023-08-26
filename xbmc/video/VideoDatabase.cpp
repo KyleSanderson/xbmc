@@ -1727,7 +1727,7 @@ int CVideoDatabase::AddActor(const std::string& name, const std::string& thumbUR
     int idActor = -1;
 
     // ATTENTION: the trimming of actor names should really not be done here but after the scraping / NFO-parsing
-    std::string trimmedName = name.c_str();
+    std::string trimmedName = name;
     StringUtils::Trim(trimmedName);
 
     std::string strSQL=PrepareSQL("select actor_id from actor where name like '%s'", trimmedName.substr(0, 255).c_str());
@@ -2132,6 +2132,33 @@ bool CVideoDatabase::GetTvShowInfo(const std::string& strPath, CVideoInfoTag& de
   catch (...)
   {
     CLog::Log(LOGERROR, "{} ({}) failed", __FUNCTION__, strPath);
+  }
+  return false;
+}
+
+bool CVideoDatabase::GetSeasonInfo(const std::string& path,
+                                   int season,
+                                   CVideoInfoTag& details,
+                                   CFileItem* item)
+{
+  try
+  {
+    const std::string sql = PrepareSQL("strPath='%s' AND season=%i", path.c_str(), season);
+    const std::string id = GetSingleValue("season_view", "idSeason", sql);
+    if (id.empty())
+    {
+      CLog::LogF(LOGERROR, "Failed to obtain seasonId for path={}, season={}", path, season);
+    }
+    else
+    {
+      const int idSeason = static_cast<int>(std::strtol(id.c_str(), nullptr, 10));
+      return GetSeasonInfo(idSeason, details, item);
+    }
+  }
+  catch (...)
+  {
+    CLog::LogF(LOGERROR, "Exception while trying to to obtain seasonId for path={}, season={}",
+               path, season);
   }
   return false;
 }
@@ -8141,7 +8168,7 @@ int CVideoDatabase::GetTvShowForEpisode(int idEpisode)
 int CVideoDatabase::GetSeasonForEpisode(int idEpisode)
 {
   char column[5];
-  sprintf(column, "c%0d", VIDEODB_ID_EPISODE_SEASON);
+  snprintf(column, sizeof(column), "c%0d", VIDEODB_ID_EPISODE_SEASON);
   std::string id = GetSingleValue("episode", column, PrepareSQL("idEpisode=%i", idEpisode));
   if (id.empty())
     return -1;
@@ -10927,7 +10954,7 @@ std::string CVideoDatabase::GetSafeFile(const std::string &dir, const std::strin
 {
   std::string safeThumb(name);
   StringUtils::Replace(safeThumb, ' ', '_');
-  return URIUtils::AddFileToFolder(dir, CUtil::MakeLegalFileName(safeThumb));
+  return URIUtils::AddFileToFolder(dir, CUtil::MakeLegalFileName(std::move(safeThumb)));
 }
 
 void CVideoDatabase::AnnounceRemove(const std::string& content, int id, bool scanning /* = false */)

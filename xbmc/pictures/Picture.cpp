@@ -6,20 +6,22 @@
  *  See LICENSES/README.md for more information.
  */
 
-#include <algorithm>
-
 #include "Picture.h"
-#include "URL.h"
+
+#include "FileItem.h"
 #include "ServiceBroker.h"
+#include "URL.h"
+#include "filesystem/File.h"
+#include "guilib/Texture.h"
+#include "guilib/imagefactory.h"
 #include "settings/AdvancedSettings.h"
 #include "settings/Settings.h"
 #include "settings/SettingsComponent.h"
-#include "FileItem.h"
-#include "filesystem/File.h"
-#include "utils/log.h"
+#include "utils/MemUtils.h"
 #include "utils/URIUtils.h"
-#include "guilib/Texture.h"
-#include "guilib/imagefactory.h"
+#include "utils/log.h"
+
+#include <algorithm>
 
 extern "C" {
 #include <libswscale/swscale.h>
@@ -257,10 +259,11 @@ bool CPicture::CacheTexture(uint8_t *pixels, uint32_t width, uint32_t height, ui
       if (ScaleImage(pixels, width, height, pitch, AV_PIX_FMT_BGRA, (uint8_t*)buffer, dest_width,
                      dest_height, stride, AV_PIX_FMT_BGRA, scalingAlgorithm))
       {
-        if (!orientation || OrientateImage(buffer, dest_width, dest_height, orientation))
+        if (!orientation ||
+            OrientateImage(buffer, dest_width, dest_height, orientation, dest_width_aligned))
         {
           success = CreateThumbnailFromSurface((unsigned char*)buffer, dest_width, dest_height,
-                                               stride, dest);
+                                               dest_width_aligned * 4, dest);
         }
       }
       delete[] buffer;
@@ -274,6 +277,73 @@ bool CPicture::CacheTexture(uint8_t *pixels, uint32_t width, uint32_t height, ui
     return CreateThumbnailFromSurface(pixels, width, height, pitch, dest);
   }
   return false;
+}
+
+std::unique_ptr<CTexture> CPicture::CreateTiledThumb(const std::vector<std::string>& files)
+{
+  if (!files.size())
+    return {};
+
+  unsigned int num_across =
+      static_cast<unsigned int>(std::ceil(std::sqrt(static_cast<float>(files.size()))));
+  unsigned int num_down = (files.size() + num_across - 1) / num_across;
+
+  unsigned int imageRes = CServiceBroker::GetSettingsComponent()->GetAdvancedSettings()->m_imageRes;
+
+  unsigned int tile_width = imageRes / num_across;
+  unsigned int tile_height = imageRes / num_down;
+  unsigned int tile_gap = 1;
+  bool success = false; // Flag that we at least had one successful image processed
+
+  // create a buffer for the resulting thumb
+  std::unique_ptr<uint32_t[]> buffer = std::make_unique<uint32_t[]>(imageRes * imageRes);
+  if (!buffer)
+    return {};
+  for (unsigned int i = 0; i < files.size(); ++i)
+  {
+    int x = i % num_across;
+    int y = i / num_across;
+    // load in the image
+    unsigned int width = tile_width - 2 * tile_gap, height = tile_height - 2 * tile_gap;
+    std::unique_ptr<CTexture> texture = CTexture::LoadFromFile(files[i], width, height, true);
+    if (texture && texture->GetWidth() && texture->GetHeight())
+    {
+      GetScale(texture->GetWidth(), texture->GetHeight(), width, height);
+
+      // scale appropriately
+      std::unique_ptr<uint32_t[]> scaled = std::make_unique<uint32_t[]>(width * height);
+      if (ScaleImage(texture->GetPixels(), texture->GetWidth(), texture->GetHeight(),
+                     texture->GetPitch(), AV_PIX_FMT_BGRA, reinterpret_cast<uint8_t*>(scaled.get()),
+                     width, height, width * 4, AV_PIX_FMT_BGRA))
+      {
+        unsigned int stridePixels{width};
+        uint32_t* scaledL = scaled.get();
+        if (!texture->GetOrientation() ||
+            OrientateImage(scaledL, width, height, texture->GetOrientation(), stridePixels))
+        {
+          success = true;
+          // drop into the texture
+          unsigned int posX = x * tile_width + (tile_width - width) / 2;
+          unsigned int posY = y * tile_height + (tile_height - height) / 2;
+          uint32_t* dest = buffer.get() + posX + posY * imageRes;
+          const uint32_t* src = scaled.get();
+          for (unsigned int y = 0; y < height; ++y)
+          {
+            memcpy(dest, src, width * 4);
+            dest += imageRes;
+            src += stridePixels;
+          }
+        }
+      }
+    }
+  }
+
+  std::unique_ptr<CTexture> result = CTexture::CreateTexture();
+  if (success)
+    result->LoadFromMemory(imageRes, imageRes, imageRes * 4, XB_FMT_A8R8G8B8, true,
+                           reinterpret_cast<unsigned char*>(buffer.get()));
+
+  return result;
 }
 
 bool CPicture::CreateTiledThumb(const std::vector<std::string> &files, const std::string &thumb)
@@ -312,7 +382,9 @@ bool CPicture::CreateTiledThumb(const std::vector<std::string> &files, const std
                      texture->GetPitch(), AV_PIX_FMT_BGRA, (uint8_t*)scaled, width, height,
                      width * 4, AV_PIX_FMT_BGRA))
       {
-        if (!texture->GetOrientation() || OrientateImage(scaled, width, height, texture->GetOrientation()))
+        unsigned int stridePixels{width};
+        if (!texture->GetOrientation() ||
+            OrientateImage(scaled, width, height, texture->GetOrientation(), stridePixels))
         {
           success = true; // Flag that we at least had one successful image processed
           // drop into the texture
@@ -324,7 +396,7 @@ bool CPicture::CreateTiledThumb(const std::vector<std::string> &files, const std
           {
             memcpy(dest, src, width*4);
             dest += imageRes;
-            src += width;
+            src += stridePixels;
           }
         }
       }
@@ -379,32 +451,36 @@ bool CPicture::ScaleImage(uint8_t* in_pixels,
   return false;
 }
 
-bool CPicture::OrientateImage(uint32_t *&pixels, unsigned int &width, unsigned int &height, int orientation)
+bool CPicture::OrientateImage(uint32_t*& pixels,
+                              unsigned int& width,
+                              unsigned int& height,
+                              int orientation,
+                              unsigned int& stridePixels)
 {
   // ideas for speeding these functions up: http://cgit.freedesktop.org/pixman/tree/pixman/pixman-fast-path.c
   bool out = false;
   switch (orientation)
   {
     case 1:
-      out = FlipHorizontal(pixels, width, height);
+      out = FlipHorizontal(pixels, width, height, stridePixels);
       break;
     case 2:
-      out = Rotate180CCW(pixels, width, height);
+      out = Rotate180CCW(pixels, width, height, stridePixels);
       break;
     case 3:
-      out = FlipVertical(pixels, width, height);
+      out = FlipVertical(pixels, width, height, stridePixels);
       break;
     case 4:
-      out = Transpose(pixels, width, height);
+      out = Transpose(pixels, width, height, stridePixels);
       break;
     case 5:
-      out = Rotate270CCW(pixels, width, height);
+      out = Rotate270CCW(pixels, width, height, stridePixels);
       break;
     case 6:
-      out = TransposeOffAxis(pixels, width, height);
+      out = TransposeOffAxis(pixels, width, height, stridePixels);
       break;
     case 7:
-      out = Rotate90CCW(pixels, width, height);
+      out = Rotate90CCW(pixels, width, height, stridePixels);
       break;
     default:
       CLog::Log(LOGERROR, "Unknown orientation {}", orientation);
@@ -415,12 +491,13 @@ bool CPicture::OrientateImage(uint32_t *&pixels, unsigned int &width, unsigned i
 
 bool CPicture::FlipHorizontal(uint32_t*& pixels,
                               const unsigned int& width,
-                              const unsigned int& height)
+                              const unsigned int& height,
+                              const unsigned int& stridePixels)
 {
   // this can be done in-place easily enough
   for (unsigned int y = 0; y < height; ++y)
   {
-    uint32_t *line = pixels + y * width;
+    uint32_t* line = pixels + y * stridePixels;
     for (unsigned int x = 0; x < width / 2; ++x)
       std::swap(line[x], line[width - 1 - x]);
   }
@@ -429,13 +506,14 @@ bool CPicture::FlipHorizontal(uint32_t*& pixels,
 
 bool CPicture::FlipVertical(uint32_t*& pixels,
                             const unsigned int& width,
-                            const unsigned int& height)
+                            const unsigned int& height,
+                            const unsigned int& stridePixels)
 {
   // this can be done in-place easily enough
   for (unsigned int y = 0; y < height / 2; ++y)
   {
-    uint32_t *line1 = pixels + y * width;
-    uint32_t *line2 = pixels + (height - 1 - y) * width;
+    uint32_t* line1 = pixels + y * stridePixels;
+    uint32_t* line2 = pixels + (height - 1 - y) * stridePixels;
     for (unsigned int x = 0; x < width; ++x)
       std::swap(*line1++, *line2++);
   }
@@ -444,26 +522,30 @@ bool CPicture::FlipVertical(uint32_t*& pixels,
 
 bool CPicture::Rotate180CCW(uint32_t*& pixels,
                             const unsigned int& width,
-                            const unsigned int& height)
+                            const unsigned int& height,
+                            const unsigned int& stridePixels)
 {
   // this can be done in-place easily enough
   for (unsigned int y = 0; y < height / 2; ++y)
   {
-    uint32_t *line1 = pixels + y * width;
-    uint32_t *line2 = pixels + (height - 1 - y) * width + width - 1;
+    uint32_t* line1 = pixels + y * stridePixels;
+    uint32_t* line2 = pixels + (height - 1 - y) * stridePixels + width - 1;
     for (unsigned int x = 0; x < width; ++x)
       std::swap(*line1++, *line2--);
   }
   if (height % 2)
   { // height is odd, so flip the middle row as well
-    uint32_t *line = pixels + (height - 1)/2 * width;
+    uint32_t* line = pixels + (height - 1) / 2 * stridePixels;
     for (unsigned int x = 0; x < width / 2; ++x)
       std::swap(line[x], line[width - 1 - x]);
   }
   return true;
 }
 
-bool CPicture::Rotate90CCW(uint32_t *&pixels, unsigned int &width, unsigned int &height)
+bool CPicture::Rotate90CCW(uint32_t*& pixels,
+                           unsigned int& width,
+                           unsigned int& height,
+                           unsigned int& stridePixels)
 {
   uint32_t *dest = new uint32_t[width * height * 4];
   if (dest)
@@ -476,18 +558,22 @@ bool CPicture::Rotate90CCW(uint32_t *&pixels, unsigned int &width, unsigned int 
       for (unsigned int x = 0; x < d_width; x++)
       {
         *dst++ = *src;
-        src += width;
+        src += stridePixels;
       }
     }
     delete[] pixels;
     pixels = dest;
     std::swap(width, height);
+    stridePixels = width;
     return true;
   }
   return false;
 }
 
-bool CPicture::Rotate270CCW(uint32_t *&pixels, unsigned int &width, unsigned int &height)
+bool CPicture::Rotate270CCW(uint32_t*& pixels,
+                            unsigned int& width,
+                            unsigned int& height,
+                            unsigned int& stridePixels)
 {
   uint32_t *dest = new uint32_t[width * height * 4];
   if (!dest)
@@ -496,22 +582,27 @@ bool CPicture::Rotate270CCW(uint32_t *&pixels, unsigned int &width, unsigned int
   unsigned int d_height = width, d_width = height;
   for (unsigned int y = 0; y < d_height; y++)
   {
-    const uint32_t *src = pixels + width * (d_width - 1) + y; // y-th col from left, starting at bottom
-    uint32_t *dst = dest + d_width * y;                       // y-th row from top, starting at left
+    const uint32_t* src =
+        pixels + stridePixels * (d_width - 1) + y; // y-th col from left, starting at bottom
+    uint32_t* dst = dest + d_width * y; // y-th row from top, starting at left
     for (unsigned int x = 0; x < d_width; x++)
     {
       *dst++ = *src;
-      src -= width;
+      src -= stridePixels;
     }
   }
 
   delete[] pixels;
   pixels = dest;
   std::swap(width, height);
+  stridePixels = width;
   return true;
 }
 
-bool CPicture::Transpose(uint32_t *&pixels, unsigned int &width, unsigned int &height)
+bool CPicture::Transpose(uint32_t*& pixels,
+                         unsigned int& width,
+                         unsigned int& height,
+                         unsigned int& stridePixels)
 {
   uint32_t *dest = new uint32_t[width * height * 4];
   if (!dest)
@@ -525,17 +616,21 @@ bool CPicture::Transpose(uint32_t *&pixels, unsigned int &width, unsigned int &h
     for (unsigned int x = 0; x < d_width; x++)
     {
       *dst++ = *src;
-      src += width;
+      src += stridePixels;
     }
   }
 
   delete[] pixels;
   pixels = dest;
   std::swap(width, height);
+  stridePixels = width;
   return true;
 }
 
-bool CPicture::TransposeOffAxis(uint32_t *&pixels, unsigned int &width, unsigned int &height)
+bool CPicture::TransposeOffAxis(uint32_t*& pixels,
+                                unsigned int& width,
+                                unsigned int& height,
+                                unsigned int& stridePixels)
 {
   uint32_t *dest = new uint32_t[width * height * 4];
   if (!dest)
@@ -544,17 +639,19 @@ bool CPicture::TransposeOffAxis(uint32_t *&pixels, unsigned int &width, unsigned
   unsigned int d_height = width, d_width = height;
   for (unsigned int y = 0; y < d_height; y++)
   {
-    const uint32_t *src = pixels + width * (d_width - 1) + (d_height - 1 - y); // y-th col from right, starting at bottom
+    const uint32_t* src = pixels + stridePixels * (d_width - 1) +
+                          (d_height - 1 - y); // y-th col from right, starting at bottom
     uint32_t *dst = dest + d_width * y;                                        // y-th row, starting at left
     for (unsigned int x = 0; x < d_width; x++)
     {
       *dst++ = *src;
-      src -= width;
+      src -= stridePixels;
     }
   }
 
   delete[] pixels;
   pixels = dest;
   std::swap(width, height);
+  stridePixels = width;
   return true;
 }

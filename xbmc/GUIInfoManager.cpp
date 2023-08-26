@@ -15,6 +15,8 @@
 #include "application/ApplicationComponents.h"
 #include "application/ApplicationPlayer.h"
 #include "cores/DataCacheCore.h"
+#include "filesystem/File.h"
+#include "games/tags/GameInfoTag.h"
 #include "guilib/guiinfo/GUIInfo.h"
 #include "guilib/guiinfo/GUIInfoHelper.h"
 #include "guilib/guiinfo/GUIInfoLabels.h"
@@ -10704,7 +10706,7 @@ INFO::InfoPtr CGUIInfoManager::Register(const std::string &expression, int conte
     res = m_bools.insert(std::make_shared<InfoSingle>(condition, context, m_refreshCounter));
 
   if (res.second)
-    res.first->get()->Initialize();
+    res.first->get()->Initialize(this);
 
   return *(res.first);
 }
@@ -11324,6 +11326,14 @@ const CVideoInfoTag* CGUIInfoManager::GetCurrentMovieTag() const
 {
   if (m_currentFile->HasVideoInfoTag())
     return m_currentFile->GetVideoInfoTag();
+
+  return nullptr;
+}
+
+const KODI::GAME::CGameInfoTag* CGUIInfoManager::GetCurrentGameTag() const
+{
+  if (m_currentFile->HasGameInfoTag())
+    return m_currentFile->GetGameInfoTag();
 
   return nullptr;
 }

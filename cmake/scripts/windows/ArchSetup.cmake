@@ -35,7 +35,10 @@ set(CORE_MAIN_SOURCE ${CMAKE_SOURCE_DIR}/xbmc/platform/win32/WinMain.cpp)
 set(PRECOMPILEDHEADER_DIR ${PROJECT_BINARY_DIR}/${CORE_BUILD_CONFIG}/objs)
 set(CMAKE_SYSTEM_NAME Windows)
 set(DEPS_FOLDER_RELATIVE project/BuildDependencies)
-set(NATIVEPREFIX ${CMAKE_SOURCE_DIR}/${DEPS_FOLDER_RELATIVE}/tools)
+# ToDo: currently host build tools are hardcoded to win32
+# If we ever allow package.native other than 0_package.native-win32.list we will want to
+# adapt this based on host
+set(NATIVEPREFIX ${CMAKE_SOURCE_DIR}/${DEPS_FOLDER_RELATIVE}/win32)
 set(DEPENDS_PATH ${CMAKE_SOURCE_DIR}/${DEPS_FOLDER_RELATIVE}/${ARCH})
 set(MINGW_LIBS_DIR ${CMAKE_SOURCE_DIR}/${DEPS_FOLDER_RELATIVE}/mingwlibs/${ARCH})
 
@@ -62,9 +65,15 @@ set(SYSTEM_DEFINES -DWIN32_LEAN_AND_MEAN -DNOMINMAX -DHAS_DX -D__STDC_CONSTANT_M
 # Additional SYSTEM_DEFINES
 list(APPEND SYSTEM_DEFINES -DHAS_WIN32_NETWORK -DHAS_FILESYSTEM_SMB)
 
-# Make sure /FS is set for Visual Studio in order to prevent simultaneous access to pdb files.
+# The /MP option enables /FS by default.
 if(CMAKE_GENERATOR MATCHES "Visual Studio")
-  set(CMAKE_CXX_FLAGS "/permissive- /MP /FS ${CMAKE_CXX_FLAGS}")
+  if(DEFINED ENV{MAXTHREADS})
+    set(MP_FLAG "/MP$ENV{MAXTHREADS}")
+  else()
+    set(MP_FLAG "/MP")
+  endif()
+
+  set(CMAKE_CXX_FLAGS "/permissive- ${MP_FLAG} ${CMAKE_CXX_FLAGS}")
 endif()
 
 # Google Test needs to use shared version of runtime libraries

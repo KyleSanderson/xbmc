@@ -19,7 +19,6 @@
 #include <string>
 #include <vector>
 
-class TiXmlDocument;
 class CDateTime;
 class CSetting;
 class IKeymap;
@@ -285,9 +284,9 @@ protected:
   int m_iProductId;
   std::string m_strProductId;
   std::string m_strVersionInfo;
-  bool m_bInitialised;
-  bool m_bHidden;
-  bool m_bError;
+  bool m_bInitialised = false;
+  bool m_bHidden = false;
+  bool m_bError = false;
   std::vector<PeripheralFeature> m_features;
   PeripheralVector m_subDevices;
   std::map<std::string, PeripheralDeviceSetting> m_settings;

@@ -52,6 +52,7 @@
 #include "video/VideoInfoTag.h"
 #include "video/VideoLibraryQueue.h"
 #include "video/VideoThumbLoader.h"
+#include "video/VideoUtils.h"
 #include "video/tags/VideoTagLoaderFFmpeg.h"
 #include "video/windows/GUIWindowVideoNav.h"
 
@@ -385,7 +386,7 @@ void CGUIDialogVideoInfo::SetMovie(const CFileItem *item)
       loader.LoadItem(item.get());
   }
   else
-  { // movie/show/episode
+  { // movie/show/season/episode
     for (CVideoInfoTag::iCast it = m_movieItem->GetVideoInfoTag()->m_cast.begin(); it != m_movieItem->GetVideoInfoTag()->m_cast.end(); ++it)
     {
       CFileItemPtr item(new CFileItem(it->strName));
@@ -477,6 +478,10 @@ void CGUIDialogVideoInfo::Update()
       else if (m_movieItem->GetVideoInfoTag()->m_type == MediaTypeVideoCollection)
       {
         SET_CONTROL_LABEL(CONTROL_BTN_TRACKS, 20342);
+      }
+      else if (m_movieItem->GetVideoInfoTag()->m_type == MediaTypeSeason)
+      {
+        SET_CONTROL_LABEL(CONTROL_BTN_TRACKS, 20360); // Episodes
       }
       else
       {
@@ -661,7 +666,14 @@ void CGUIDialogVideoInfo::OnSearchItemFound(const CFileItem* pItem)
   if (type == VideoDbContentType::EPISODES)
     db.GetEpisodeInfo(pItem->GetPath(), movieDetails, pItem->GetVideoInfoTag()->m_iDbId);
   if (type == VideoDbContentType::TVSHOWS)
-    db.GetTvShowInfo(pItem->GetPath(), movieDetails, pItem->GetVideoInfoTag()->m_iDbId);
+  {
+    bool hasInfo = false;
+    const CVideoInfoTag* videoTag = pItem->GetVideoInfoTag();
+    if (videoTag->m_type == MediaTypeSeason && videoTag->m_iSeason != -1)
+      hasInfo = db.GetSeasonInfo(videoTag->m_iIdSeason, movieDetails);
+    if (!hasInfo)
+      db.GetTvShowInfo(pItem->GetPath(), movieDetails, videoTag->m_iDbId);
+  }
   if (type == VideoDbContentType::MUSICVIDEOS)
     db.GetMusicVideoInfo(pItem->GetPath(), movieDetails, pItem->GetVideoInfoTag()->m_iDbId);
   db.Close();
@@ -689,9 +701,11 @@ void CGUIDialogVideoInfo::ClearCastList()
 
 void CGUIDialogVideoInfo::Play(bool resume)
 {
-  if (m_movieItem->GetVideoInfoTag()->m_type == MediaTypeTvShow)
+  std::string strPath;
+
+  const CVideoInfoTag* videoTag = m_movieItem->GetVideoInfoTag();
+  if (videoTag->m_type == MediaTypeTvShow || videoTag->m_type == MediaTypeSeason)
   {
-    std::string strPath;
     if (m_movieItem->IsPlugin())
     {
       strPath = m_movieItem->GetPath();
@@ -702,47 +716,48 @@ void CGUIDialogVideoInfo::Play(bool resume)
                             GetWindowManager().GetActiveWindow(), 0, GUI_MSG_UPDATE, 0);
         message.SetStringParam(strPath);
         CServiceBroker::GetGUI()->GetWindowManager().SendMessage(message);
+        return;
       }
-      else
-        CServiceBroker::GetGUI()->GetWindowManager().ActivateWindow(WINDOW_VIDEO_NAV,strPath);
     }
-    else
-    {
-      strPath = StringUtils::Format("videodb://tvshows/titles/{}/",
-                                    m_movieItem->GetVideoInfoTag()->m_iDbId);
-      Close();
-      CServiceBroker::GetGUI()->GetWindowManager().ActivateWindow(WINDOW_VIDEO_NAV,strPath);
-    }
-    return;
+    else if (videoTag->m_type == MediaTypeTvShow)
+      strPath = StringUtils::Format("videodb://tvshows/titles/{}/", videoTag->m_iDbId);
+    else // season
+      strPath = StringUtils::Format("videodb://tvshows/titles/{}/{}/", videoTag->m_iIdShow,
+                                    videoTag->m_iSeason);
+  }
+  else if (videoTag->m_type == MediaTypeVideoCollection)
+  {
+    strPath = StringUtils::Format("videodb://movies/sets/{}/?setid={}", videoTag->m_iDbId,
+                                  videoTag->m_iDbId);
   }
 
-  if (m_movieItem->GetVideoInfoTag()->m_type == MediaTypeVideoCollection)
+  if (!strPath.empty())
   {
-    std::string strPath = StringUtils::Format("videodb://movies/sets/{}/?setid={}",
-                                              m_movieItem->GetVideoInfoTag()->m_iDbId,
-                                              m_movieItem->GetVideoInfoTag()->m_iDbId);
     Close();
     CServiceBroker::GetGUI()->GetWindowManager().ActivateWindow(WINDOW_VIDEO_NAV, strPath);
     return;
   }
 
-  CGUIWindowVideoNav* pWindow = CServiceBroker::GetGUI()->GetWindowManager().GetWindow<CGUIWindowVideoNav>(WINDOW_VIDEO_NAV);
-  if (pWindow)
-  {
-    // close our dialog
-    Close(true);
-    if (resume)
-      m_movieItem->SetStartOffset(STARTOFFSET_RESUME);
-    else if (!CGUIWindowVideoBase::ShowResumeMenu(*m_movieItem))
-    {
-      // The Resume dialog was closed without any choice
-      Open();
-      return;
-    }
-    m_movieItem->SetProperty("playlist_type_hint", PLAYLIST::TYPE_VIDEO);
+  // close our dialog
+  Close(true);
 
-    pWindow->PlayMovie(m_movieItem.get());
+  if (resume)
+  {
+    m_movieItem->SetStartOffset(STARTOFFSET_RESUME);
   }
+  else if (!CGUIWindowVideoBase::ShowResumeMenu(*m_movieItem))
+  {
+    // The Resume dialog was closed without any choice
+    Open();
+    return;
+  }
+
+  m_movieItem->SetProperty("playlist_type_hint", PLAYLIST::TYPE_VIDEO);
+
+  const ContentUtils::PlayMode mode = m_movieItem->GetProperty("CheckAutoPlayNextItem").asBoolean()
+                                          ? ContentUtils::PlayMode::CHECK_AUTO_PLAY_NEXT_ITEM
+                                          : ContentUtils::PlayMode::PLAY_ONLY_THIS;
+  VIDEO_UTILS::PlayItem(m_movieItem, mode);
 }
 
 namespace
@@ -1919,7 +1934,7 @@ bool CGUIDialogVideoInfo::AddItemsToTag(const std::shared_ptr<CFileItem>& tagIte
     return true;
 
   std::string mediaType = videoUrl.GetItemType();
-  mediaType = mediaType.substr(0, mediaType.length() - 1);
+  mediaType.pop_back();
 
   CFileItemList items;
   std::string localizedType = GetLocalizedVideoType(mediaType);
@@ -1952,7 +1967,7 @@ bool CGUIDialogVideoInfo::RemoveItemsFromTag(const std::shared_ptr<CFileItem>& t
     return true;
 
   std::string mediaType = videoUrl.GetItemType();
-  mediaType = mediaType.substr(0, mediaType.length() - 1);
+  mediaType.pop_back();
 
   CFileItemList items;
   std::string localizedType = GetLocalizedVideoType(mediaType);

@@ -5,9 +5,9 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: KODI Main\n"
-"Report-Msgid-Bugs-To: https://github.com/xbmc/xbmc/issues/\n"
+"Report-Msgid-Bugs-To: translations@kodi.tv\n"
 "POT-Creation-Date: YEAR-MO-DA HO:MI+ZONE\n"
-"PO-Revision-Date: 2022-11-02 19:40+0000\n"
+"PO-Revision-Date: 2023-07-04 23:17+0000\n"
 "Last-Translator: Jose Riha <jose1711@gmail.com>\n"
 "Language-Team: Slovak <https://kodi.weblate.cloud/projects/kodi-add-ons-skins/skin-estuary/sk_sk/>\n"
 "Language: sk_sk\n"
@@ -15,7 +15,7 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=4; plural=(n % 1 == 0 && n == 1 ? 0 : n % 1 == 0 && n >= 2 && n <= 4 ? 1 : n % 1 != 0 ? 2: 3);\n"
-"X-Generator: Weblate 4.14.1\n"
+"X-Generator: Weblate 4.18.2\n"
 
 msgctxt "Addon Summary"
 msgid "Estuary skin by phil65. (Kodi's default skin)"
@@ -101,7 +101,7 @@ msgstr "Nedávno prehrávané kanály"
 
 msgctxt "#31017"
 msgid "Rated"
-msgstr "Ohodnotené"
+msgstr "Prístupnosť"
 
 #. home screen channel widget: recently played radio channels. (please note that in some non-english languages #31018 and #31016 might not be equal)
 msgctxt "#31018"
@@ -642,7 +642,7 @@ msgstr "Pre hudobné videá namiesto miniatúr zobrazovať plagáty"
 #. Description label for skin settings area
 msgctxt "#31169"
 msgid "Artwork related settings."
-msgstr "Nastavenia súvisiace s Artwork"
+msgstr "Nastavenia súvisiace s Artwork (umeleckou grafikou)."
 
 #. Label for OSD settings category
 msgctxt "#31170"
@@ -657,12 +657,12 @@ msgstr ""
 #. Setting Automatically close video OSD
 msgctxt "#31172"
 msgid "Automatically close video OSD"
-msgstr ""
+msgstr "Automaticky zatvárať OSD video"
 
 #. Setting auto close time for video osd
 msgctxt "#31173"
 msgid "Video OSD autoclose time (seconds)"
-msgstr ""
+msgstr "Čas automatického zatvárania OSD videa (sekundy)"
 
 #. Setting to control what happens when clicking a music album on the home screen
 msgctxt "#31174"

@@ -38,12 +38,10 @@ using namespace std::chrono_literals;
 class CWriteRate
 {
 public:
-  CWriteRate()
+  CWriteRate() : m_stamp(std::chrono::steady_clock::now()), m_time(std::chrono::milliseconds(0))
   {
-    m_stamp = std::chrono::steady_clock::now();
     m_pos   = 0;
     m_size = 0;
-    m_time = std::chrono::milliseconds(0);
   }
 
   void Reset(int64_t pos, bool bResetAll = true)
@@ -80,22 +78,8 @@ private:
   int64_t  m_size;
 };
 
-
 CFileCache::CFileCache(const unsigned int flags)
-  : CThread("FileCache"),
-    m_seekPossible(0),
-    m_nSeekResult(0),
-    m_seekPos(0),
-    m_readPos(0),
-    m_writePos(0),
-    m_chunkSize(0),
-    m_writeRate(0),
-    m_writeRateActual(0),
-    m_writeRateLowSpeed(0),
-    m_forwardCacheSize(0),
-    m_bFilling(false),
-    m_fileSize(0),
-    m_flags(flags)
+  : CThread("FileCache"), m_fileSize(0), m_flags(flags)
 {
 }
 

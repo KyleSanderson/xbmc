@@ -1,4 +1,5 @@
 xbmc/addons/test                  test/addons
+xbmc/addons/gui/skin/test         test/skin
 xbmc/cores/AudioEngine/Sinks/test test/audioengine_sinks
 xbmc/cores/VideoPlayer/test/edl   test/edl
 xbmc/cores/VideoPlayer/VideoRenderers/VideoShaders/test test/videoshaders
@@ -8,6 +9,7 @@ xbmc/music/tags/test              test/music_tags
 xbmc/network/test                 test/network
 xbmc/playlists/test               test/playlists
 xbmc/pvr/channels/test            test/pvrchannels
+xbmc/settings/test                test/settings
 xbmc/test                         test
 xbmc/threads/test                 test/threads
 xbmc/utils/test                   test/utils

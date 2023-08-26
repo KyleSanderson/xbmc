@@ -305,7 +305,7 @@ void CGUIWindowMusicPlayList::SavePlayList()
   std::string strNewFileName;
   if (CGUIKeyboardFactory::ShowAndGetInput(strNewFileName, CVariant{g_localizeStrings.Get(16012)}, false))
   {
-    strNewFileName = CUtil::MakeLegalFileName(strNewFileName);
+    strNewFileName = CUtil::MakeLegalFileName(std::move(strNewFileName));
     strNewFileName += ".m3u8";
     std::string strPath = URIUtils::AddFileToFolder(
       CServiceBroker::GetSettingsComponent()->GetSettings()->GetString(CSettings::SETTING_SYSTEM_PLAYLISTSPATH),
@@ -325,7 +325,7 @@ void CGUIWindowMusicPlayList::SavePlayList()
     }
 
     std::string strOldDirectory = m_vecItems->GetPath();
-    m_history.SetSelectedItem(strSelectedItem, strOldDirectory);
+    m_history.SetSelectedItem(strSelectedItem, strOldDirectory, iItem);
 
     PLAYLIST::CPlayListM3U playlist;
     for (int i = 0; i < m_vecItems->Size(); ++i)

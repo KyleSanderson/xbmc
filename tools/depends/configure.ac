@@ -129,7 +129,6 @@ AC_ARG_WITH([ffmpeg-options],
   [ffmpeg_options=$withval],
   [ffmpeg_options=default])
 
-
 if test "$use_ccache" = "yes"; then
   AC_CHECK_PROG(HAVE_CCACHE,ccache,"yes","no",)
   if test "x$HAVE_CCACHE" = "xno" ; then
@@ -188,7 +187,7 @@ case $build in
   *darwin*)
     build_os="osx"
     if test "x$build_cpu" = "xx86_64"; then
-      host_includes="-arch x86_64 -mmacosx-version-min=10.13"
+      host_includes="-arch x86_64 -mmacosx-version-min=10.14"
     else
       host_includes="-arch arm64 -mmacosx-version-min=11.0"
     fi
@@ -314,7 +313,7 @@ esac
 case $host in
   *-*linux-android*)
     deps_dir="$use_host-$use_ndk_api-$build_type"
-    platform_cflags="-DANDROID -D__ANDROID_API__=$use_ndk_api -fexceptions -funwind-tables -fstack-protector-strong -no-canonical-prefixes -fPIC -DPIC"
+    platform_cflags="-DANDROID -fexceptions -funwind-tables -fstack-protector-strong -no-canonical-prefixes -fPIC -DPIC"
     optimize_flags="-Os"
     platform_ldflags="-Wl,--exclude-libs,libgcc.a -Wl,--exclude-libs,libatomic.a -L$prefix/$deps_dir/lib/android-$use_ndk_api"
 
@@ -342,12 +341,14 @@ case $host in
         if test "x$use_cpu" = "xauto"; then
           use_cpu=$host_cpu
         fi
+        platform_asflags="-DPIC"
         meson_cpu="x86"
       ;;
       x86_64*-linux-android*)
         if test "x$use_cpu" = "xauto"; then
           use_cpu=$host_cpu
         fi
+        platform_asflags="-DPIC"
         meson_cpu="x86_64"
       ;;
       *)
@@ -360,6 +361,21 @@ case $host in
     meson_system="android"
     #android builds are always cross
     cross_compiling="yes"
+  ;;
+  arm-webos-linux-gnueabi|arm-starfish-linux-gnueabi)
+    meson_cpu="arm"
+    if test "x$use_cpu" = "xauto"; then
+      use_cpu="armeabi-v7a"
+    fi
+    use_toolchain="${use_toolchain:-/usr}"
+    platform_cflags="-fPIC -DPIC -march=armv7-a -mtune=cortex-a9 -mfloat-abi=softfp -mfpu=neon"
+    platform_cxxflags="$platform_cflags -static-libstdc++"
+    optimize_flags="-Os"
+    platform_ldflags="-Wl,-rpath-link=$prefix/$deps_dir/lib"
+    platform_os="linux"
+    meson_system="linux"
+    target_platform="webos"
+    app_rendersystem="gles"
   ;;
   arm*-*-linux-gnu*|arm*-*-linux-uclibc*|aarch64*-*-linux-gnu*|aarch*-*-linux-be*)
     case $host in
@@ -375,9 +391,9 @@ case $host in
     fi
     use_toolchain="${use_toolchain:-/usr}"
     platform_cflags="-fPIC -DPIC"
+    platform_cxxflags="$platform_cflags"
     optimize_flags="-Os"
     platform_ldflags="-Wl,-rpath-link=$prefix/$deps_dir/lib"
-    platform_cxxflags="$platform_cflags"
     platform_os="linux"
     meson_system="linux"
     target_platform="wayland gbm"
@@ -445,16 +461,16 @@ case $host in
           AC_MSG_ERROR(invalid architecture (--with-cpu=$use_cpu))
         fi
 
-        target_minver="10.13"
+        target_minver="10.14"
 
         # check provided window system is valid_sdk
-        # if no window system supplied, default to SDL for now.
+        # if no window system supplied, default to native.
         if test -n "$app_winsystem"; then
           if test "$app_winsystem" != "native" && test "$app_winsystem" != "sdl"; then
             AC_MSG_ERROR(Window system must be native or sdl)
           fi
         else
-          app_winsystem=sdl
+          app_winsystem=native
         fi
       ;;
       aarch64-apple-darwin*)
@@ -504,6 +520,8 @@ esac
 case $use_platform in
   ios|tvos|macos)
     ;;
+  webos)
+    ;;
   auto)
     ;;
   *)
@@ -522,7 +540,7 @@ case $build in
     fi
 esac
 
-if test "$platform_os" = "android"; then
+if test "$platform_os" = "android" || test "$target_platform" = "webos"; then
   need_libiconv=1
 else
   AC_SEARCH_LIBS([iconv_open],iconv, link_iconv=$ac_cv_search_iconv_open, link_iconv=-liconv; AC_MSG_WARN("No iconv support in toolchain. Will build libiconv."); need_libiconv=1)
@@ -696,6 +714,7 @@ AC_SUBST(use_tarballs)
 AC_SUBST(target_platform)
 AC_SUBST(use_firmware)
 AC_SUBST(cross_compiling)
+AC_SUBST(platform_asflags)
 AC_SUBST(platform_cflags)
 AC_SUBST(platform_cxxflags)
 AC_SUBST(platform_cflags_release)
@@ -843,9 +862,11 @@ echo -e "cpu:\t\t\t $use_cpu"
 echo -e "host:\t\t $use_host"
 echo -e "CC:\t\t $CC"
 echo -e "CXX:\t\t $CXX"
+echo -e "asflags:\t\t $platform_asflags"
 echo -e "cflags:\t\t $platform_cflags"
 echo -e "cxxflags:\t\t $platform_cxxflags"
 echo -e "ldflags:\t\t $platform_ldflags"
+echo -e "target_platform:\t $target_platform"
 echo -e "platform_includes:\t $platform_includes"
 echo -e "ffmpeg options:\t $ffmpeg_options"
 echo -e "prefix:\t\t $prefix"

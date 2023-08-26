@@ -10,6 +10,7 @@
 
 #include "Utils/MathUtils.h"
 #include "Utils/TimeUtils.h"
+#include "cores/VideoPlayer/VideoReferenceClock.h"
 #include "rendering/dx/DeviceResources.h"
 #include "rendering/dx/RenderContext.h"
 #include "utils/StringUtils.h"
@@ -40,7 +41,7 @@ void CVideoSyncD3D::RefreshChanged()
   m_displayReset = true;
 }
 
-bool CVideoSyncD3D::Setup(PUPDATECLOCK func)
+bool CVideoSyncD3D::Setup()
 {
   CLog::Log(LOGDEBUG, "CVideoSyncD3D: Setting up Direct3d");
   std::unique_lock<CCriticalSection> lock(CServiceBroker::GetWinSystem()->GetGfxContext());
@@ -48,7 +49,6 @@ bool CVideoSyncD3D::Setup(PUPDATECLOCK func)
   m_displayLost = false;
   m_displayReset = false;
   m_lostEvent.Reset();
-  UpdateClock = func;
 
   // we need a high priority thread to get accurate timing
   if (!SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL))
@@ -74,7 +74,7 @@ void CVideoSyncD3D::Run(CEvent& stopEvent)
     // sleep until vblank
     Microsoft::WRL::ComPtr<IDXGIOutput> pOutput;
     DX::DeviceResources::Get()->GetOutput(&pOutput);
-    HRESULT hr = pOutput->WaitForVBlank();
+    pOutput->WaitForVBlank();
 
     // calculate how many vblanks happened
     Now = CurrentHostCounter();
@@ -82,7 +82,7 @@ void CVideoSyncD3D::Run(CEvent& stopEvent)
     NrVBlanks = MathUtils::round_int(VBlankTime * m_fps);
 
     // update the vblank timestamp, update the clock and send a signal that we got a vblank
-    UpdateClock(NrVBlanks, Now, m_refClock);
+    m_refClock->UpdateClock(NrVBlanks, Now);
 
     // save the timestamp of this vblank so we can calculate how many vblanks happened next time
     LastVBlankTime = Now;
@@ -128,13 +128,6 @@ float CVideoSyncD3D::GetFps()
   if (m_fps == 0.0)
     m_fps = 60.0f;
 
-  if (m_fps == 23 || m_fps == 29 || m_fps == 59)
-    m_fps++;
-
-  if (DX::Windowing()->Interlaced())
-  {
-    m_fps *= 2;
-  }
   return m_fps;
 }
 

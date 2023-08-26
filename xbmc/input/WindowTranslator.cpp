@@ -169,7 +169,9 @@ const CWindowTranslator::WindowMapByName CWindowTranslator::WindowMappingByName 
     {"gameadvancedsettings", WINDOW_DIALOG_GAME_ADVANCED_SETTINGS},
     {"gamevideorotation", WINDOW_DIALOG_GAME_VIDEO_ROTATION},
     {"ingamesaves", WINDOW_DIALOG_IN_GAME_SAVES},
-    {"gamesaves", WINDOW_DIALOG_GAME_SAVES}};
+    {"gamesaves", WINDOW_DIALOG_GAME_SAVES},
+    {"gameagents", WINDOW_DIALOG_GAME_AGENTS},
+};
 
 namespace
 {
@@ -219,7 +221,7 @@ int CWindowTranslator::TranslateWindow(const std::string& window)
 
   // Eliminate .xml
   if (StringUtils::EndsWith(strWindow, ".xml"))
-    strWindow = strWindow.substr(0, strWindow.size() - 4);
+    strWindow.resize(strWindow.size() - 4);
 
   // window12345, for custom window to be keymapped
   if (strWindow.length() > 6 && StringUtils::StartsWith(strWindow, "window"))

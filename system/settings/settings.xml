@@ -113,6 +113,26 @@
             <formatlabel>14047</formatlabel>
           </control>
         </setting>
+        <setting id="videoplayer.usesuperresolution" type="boolean" label="13417" help="39194">
+          <requirement>HAS_DX</requirement>
+          <dependencies>
+            <dependency type="visible">
+              <condition on="property" name="supportsvideosuperresolution" />
+            </dependency>
+            <dependency type="enable">
+              <or>
+                <condition setting="videoplayer.rendermethod" operator="is">0</condition> <!-- RENDER_METHOD_AUTO -->
+                <condition setting="videoplayer.rendermethod" operator="is">4</condition> <!-- RENDER_METHOD_DXVA -->
+              </or>
+            </dependency>
+          </dependencies>
+          <level>2</level>
+          <default>false</default>
+          <updates>
+            <update type="change" />
+          </updates>
+          <control type="toggle" />
+        </setting>
         <setting id="videoplayer.usemediacodecsurface" type="boolean" label="13440" help="36544">
           <requirement>HAS_MEDIACODEC</requirement>
           <level>2</level>
@@ -149,6 +169,12 @@
               <condition on="property" name="ishdrdisplay" />
             </dependency>
           </dependencies>
+          <level>2</level>
+          <default>true</default>
+          <control type="toggle" />
+        </setting>
+        <setting id="videoplayer.highprecision" type="boolean" label="13418" help="39195">
+          <requirement>HAS_DX</requirement>
           <level>2</level>
           <default>true</default>
           <control type="toggle" />
@@ -314,7 +340,7 @@
     <category id="discs" label="14087" help="36193">
       <group id="1" label="446">
         <setting id="dvds.autorun" type="boolean" label="14088" help="36194">
-          <requirement>HAS_DVD_DRIVE</requirement>
+          <requirement>HAS_OPTICAL_DRIVE</requirement>
           <level>0</level>
           <default>false</default>
           <control type="toggle" />
@@ -364,7 +390,7 @@
       </group>
       <group id="3" label="620">
         <setting id="audiocds.autoaction" type="integer" label="14097" help="36283">
-          <requirement>HAS_DVD_DRIVE</requirement>
+          <requirement>HAS_OPTICAL_DRIVE</requirement>
           <level>1</level>
           <default>0</default> <!-- AUTOCD_NONE -->
           <constraints>
@@ -373,7 +399,7 @@
           <control type="list" format="string" />
         </setting>
         <setting id="audiocds.usecddb" type="boolean" label="227" help="36284">
-          <requirement>HAS_DVD_DRIVE</requirement>
+          <requirement>HAS_OPTICAL_DRIVE</requirement>
           <level>1</level>
           <default>true</default>
           <control type="toggle" />
@@ -1111,12 +1137,6 @@
         </setting>
       </group>
       <group id="4" label="39123">
-        <!-- Hidden setting indicating video art settings have been migrated from old advancedsettings.xml format-->
-        <setting id="videolibrary.artsettingsupdated" type="boolean" label="0" help="">
-          <level>4</level>
-          <default>false</default>
-          <control type="toggle" />
-        </setting>
         <setting id="videolibrary.artworklevel" type="integer" label="39137" help="39138">
           <level>1</level>
           <default>0</default>
@@ -1305,12 +1325,6 @@
         </setting>
       </group>
       <group id="3" label="39123">
-        <!-- Hidden setting indicating music art settings have been migrated from old advancedsettings.xml format-->
-        <setting id="musiclibrary.artsettings" type="boolean" label="0" help="">
-          <level>4</level>
-          <default>false</default>
-          <control type="toggle" />
-        </setting>
         <setting id="musiclibrary.artworklevel" type="integer" label="39137" help="39138">
           <level>1</level>
           <default>0</default>
@@ -1573,8 +1587,8 @@
     </category>
     <category id="pvrmenu" label="14301" help="36211">
       <group id="1" label="128">
-        <setting id="pvrmanager.syncchannelgroups" type="boolean" label="19221" help="36204">
-          <level>1</level>
+        <setting id="pvrmanager.backendchannelgroupsorder" type="boolean" label="19350" help="36435">
+          <level>2</level>
           <default>true</default>
           <control type="toggle" />
         </setting>
@@ -2524,6 +2538,10 @@
           <constraints>
             <options>monitors</options>
           </constraints>
+          <dependencies>
+            <dependency type="enable" on="property" name="SupportsScreenMove" />
+            <dependency type="update" setting="videoscreen.screenmode" />
+          </dependencies>
           <control type="spinner" format="string" delayed="true" />
         </setting>
         <setting id="videoscreen.screen" type="integer" label="240" help="36351">
@@ -2580,7 +2598,7 @@
           <level>1</level>
           <default>false</default>
           <dependencies>
-            <dependency type="enable" on="property" name="IsFullscreen" />
+            <dependency type="enable" setting="videoscreen.screen" operator="!is">-1</dependency> <!-- DM_WINDOWED -->
           </dependencies>
           <control type="toggle" />
         </setting>
@@ -3982,28 +4000,32 @@
             <formatlabel>14044</formatlabel>
           </control>
         </setting>
-        <setting id="screensaver.usemusicvisinstead" type="boolean" label="13392" help="36133">
-          <level>0</level>
-          <default>true</default>
-          <dependencies>
-            <dependency type="enable" setting="screensaver.mode" operator="!is"></dependency>
-          </dependencies>
-          <control type="toggle" />
-        </setting>
-        <setting id="screensaver.usedimonpause" type="boolean" label="22014" help="36134">
-          <level>1</level>
-          <default>true</default>
-          <dependencies>
-            <dependency type="enable">
-              <and>
-                <condition setting="screensaver.mode" operator="!is">screensaver.xbmc.builtin.dim</condition>
-                <condition setting="screensaver.mode" operator="!is"></condition>
-              </and>
-            </dependency>
-          </dependencies>
-          <control type="toggle" />
-        </setting>
       </group>
+      <group id="2" label="14221">
+          <setting id="screensaver.disableforaudio" type="boolean" label="39192" help="39193">
+            <level>0</level>
+            <default>true</default>
+            <dependencies>
+              <dependency type="enable" setting="screensaver.mode" operator="!is"></dependency>
+            </dependencies>
+            <control type="toggle" />
+          </setting>
+        </group>
+        <group id="3" label="157">
+          <setting id="screensaver.usedimonpause" type="boolean" label="22014" help="36134">
+            <level>1</level>
+            <default>true</default>
+            <dependencies>
+              <dependency type="enable">
+                <and>
+                  <condition setting="screensaver.mode" operator="!is">screensaver.xbmc.builtin.dim</condition>
+                  <condition setting="screensaver.mode" operator="!is"></condition>
+                </and>
+              </dependency>
+            </dependencies>
+            <control type="toggle" />
+          </setting>
+        </group>
     </category>
     <category id="masterlock" label="12360" help="36395">
       <access>CheckMasterLock</access>

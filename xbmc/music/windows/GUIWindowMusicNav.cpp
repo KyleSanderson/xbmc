@@ -552,7 +552,7 @@ void CGUIWindowMusicNav::GetContextButtons(int itemNumber, CContextButtons &butt
     {
       // get the usual music shares, and anything for all media windows
       CGUIDialogContextMenu::GetContextButtons("music", item, buttons);
-#ifdef HAS_DVD_DRIVE
+#ifdef HAS_OPTICAL_DRIVE
       // enable Rip CD an audio disc
       if (CServiceBroker::GetMediaManager().IsDiscInDrive() && item->IsCDDA())
       {
@@ -670,6 +670,17 @@ void CGUIWindowMusicNav::GetContextButtons(int itemNumber, CContextButtons &butt
   // noncontextual buttons
 
   CGUIWindowMusicBase::GetNonContextButtons(buttons);
+}
+
+bool CGUIWindowMusicNav::OnPopupMenu(int iItem)
+{
+  if (iItem >= 0 && iItem < m_vecItems->Size())
+  {
+    const auto item = m_vecItems->Get(iItem);
+    item->SetProperty("CheckAutoPlayNextItem", true);
+  }
+
+  return CGUIWindowMusicBase::OnPopupMenu(iItem);
 }
 
 bool CGUIWindowMusicNav::OnContextButton(int itemNumber, CONTEXT_BUTTON button)

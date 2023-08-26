@@ -84,6 +84,7 @@ public:
   bool DestroyWindowSystem() override;
   bool ResizeWindow(int newWidth, int newHeight, int newLeft, int newTop) override;
   void FinishWindowResize(int newWidth, int newHeight) override;
+  void ForceFullScreen(const RESOLUTION_INFO& resInfo) override;
   void UpdateResolutions() override;
   bool CenterWindow() override;
   virtual void NotifyAppFocusChange(bool bGaining) override;
@@ -98,7 +99,7 @@ public:
   bool HasSystemSdrPeakLuminance() override;
 
   // videosync
-  std::unique_ptr<CVideoSync> GetVideoSync(void *clock) override;
+  std::unique_ptr<CVideoSync> GetVideoSync(CVideoReferenceClock* clock) override;
 
   bool SetFullScreen(bool fullScreen, RESOLUTION_INFO& res, bool blankOtherDisplays) override;
 
@@ -160,6 +161,16 @@ protected:
   void ResolutionChanged();
   static void SetForegroundWindowInternal(HWND hWnd);
   static RECT GetVirtualScreenRect();
+  /*!
+   * Retrieve the work area of the screen (exclude task bar and other occlusions)
+   */
+  RECT GetScreenWorkArea(HMONITOR handle) const;
+  /*!
+   * Retrieve size of the title bar and borders
+   * Add to coordinates to convert client coordinates to window coordinates
+   * Substract from coordinates to convert from window coordinates to client coordinates
+   */
+  RECT GetNcAreaOffsets(DWORD dwStyle, BOOL bMenu, DWORD dwExStyle) const;
 
   HWND m_hWnd;
   HMONITOR m_hMonitor;

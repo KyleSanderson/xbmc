@@ -232,7 +232,7 @@ void URIUtils::Split(const std::string& strFileNameAndPath,
       else i--;
     }
     if (i > 0)
-      strFileName = strFileName.substr(0, i);
+      strFileName.resize(i);
   }
 }
 

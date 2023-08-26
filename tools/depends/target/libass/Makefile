@@ -5,15 +5,12 @@ ifeq ($(OS),android)
   # Android API Level 21/22 requires explicit link.
   # This doesnt appear to be required for API Level 23+ (Android 6+)
   export LDFLAGS+= -lstdc++
-  
-  ifeq ($(CPU),i686)
-    export ASFLAGS+= -DPIC=1
-  endif
 endif
 
 # configuration settings
 CONFIGURE=cp -f $(CONFIG_SUB) $(CONFIG_GUESS) .; \
-          ./configure --prefix=$(PREFIX)
+          ./configure --prefix=$(PREFIX) \
+                      --disable-shared
 
 LIBDYLIB=$(PLATFORM)/$(LIBNAME)/.libs/$(LIBNAME).a
 

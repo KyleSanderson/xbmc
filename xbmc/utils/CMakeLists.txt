@@ -75,6 +75,7 @@ set(SOURCES ActorProtocol.cpp
             VC1BitstreamParser.cpp
             Vector.cpp
             XBMCTinyXML.cpp
+            XBMCTinyXML2.cpp
             XMLUtils.cpp)
 
 set(HEADERS ActorProtocol.h
@@ -178,6 +179,7 @@ set(HEADERS ActorProtocol.h
             VC1BitstreamParser.h
             Vector.h
             XBMCTinyXML.h
+            XBMCTinyXML2.h
             XMLUtils.h
             XTimeUtils.h)
 
@@ -236,6 +238,11 @@ if("gbm" IN_LIST CORE_PLATFORM_NAME_LC OR "wayland" IN_LIST CORE_PLATFORM_NAME_L
   if(LIBDRM_FOUND)
     list(APPEND SOURCES DRMHelpers.cpp)
     list(APPEND HEADERS DRMHelpers.h)
+  endif()
+
+  if(LIBDISPLAYINFO_FOUND)
+    list(APPEND SOURCES DisplayInfo.cpp)
+    list(APPEND HEADERS DisplayInfo.h)
   endif()
 endif()
 

@@ -40,6 +40,7 @@
 #include "dialogs/GUIDialogKaiToast.h"
 #include "events/EventLog.h"
 #include "events/NotificationEvent.h"
+#include "filesystem/DirectoryFactory.h"
 #include "filesystem/File.h"
 #include "guilib/GUIComponent.h"
 #include "guilib/GUIControlProfiler.h"
@@ -73,7 +74,6 @@
 #include "SeekHandler.h"
 #include "ServiceBroker.h"
 #include "TextureCache.h"
-#include "cores/DllLoader/DllLoaderContainer.h"
 #include "filesystem/Directory.h"
 #include "filesystem/DirectoryCache.h"
 #include "filesystem/DllLibCurl.h"
@@ -153,14 +153,15 @@
 #endif
 
 #ifdef TARGET_DARWIN_OSX
-#include "platform/darwin/osx/CocoaInterface.h"
+#ifdef HAS_XBMCHELPER
 #include "platform/darwin/osx/XBMCHelper.h"
+#endif
 #endif
 #ifdef TARGET_DARWIN
 #include "platform/darwin/DarwinUtils.h"
 #endif
 
-#ifdef HAS_DVD_DRIVE
+#ifdef HAS_OPTICAL_DRIVE
 #include <cdio/logging.h>
 #endif
 
@@ -199,7 +200,7 @@
 
 using namespace ADDON;
 using namespace XFILE;
-#ifdef HAS_DVD_DRIVE
+#ifdef HAS_OPTICAL_DRIVE
 using namespace MEDIA_DETECT;
 #endif
 using namespace VIDEO;
@@ -223,7 +224,7 @@ using namespace std::chrono_literals;
 
 CApplication::CApplication(void)
   :
-#ifdef HAS_DVD_DRIVE
+#ifdef HAS_OPTICAL_DRIVE
     m_Autorun(new CAutorun()),
 #endif
     m_pInertialScrollingHandler(new CInertialScrollingHandler()),
@@ -287,30 +288,13 @@ void CApplication::HandlePortEvents()
             settings->SetInt(CSettings::SETTING_WINDOW_HEIGHT, newEvent.resize.h);
             settings->Save();
           }
-#ifdef TARGET_WINDOWS
           else
           {
-            // this may occurs when OS tries to resize application window
-            //CDisplaySettings::GetInstance().SetCurrentResolution(RES_DESKTOP, true);
-            //auto& gfxContext = CServiceBroker::GetWinSystem()->GetGfxContext();
-            //gfxContext.SetVideoResolution(gfxContext.GetVideoResolution(), true);
-            // try to resize window back to it's full screen size
-            //! TODO: DX windowing should emit XBMC_FULLSCREEN_UPDATE instead with the proper dimensions
-            //! and position to avoid the ifdef in common code
-            auto& res_info = CDisplaySettings::GetInstance().GetResolutionInfo(RES_DESKTOP);
-            CServiceBroker::GetWinSystem()->ResizeWindow(res_info.iScreenWidth, res_info.iScreenHeight, 0, 0);
+            const auto& res_info = CDisplaySettings::GetInstance().GetResolutionInfo(RES_DESKTOP);
+            CServiceBroker::GetWinSystem()->ForceFullScreen(res_info);
           }
-#endif
         }
         break;
-      case XBMC_FULLSCREEN_UPDATE:
-      {
-        if (CServiceBroker::GetSettingsComponent()->GetAdvancedSettings()->m_fullScreen)
-        {
-          CServiceBroker::GetWinSystem()->ResizeWindow(newEvent.resize.w, newEvent.resize.h, 0, 0);
-        }
-        break;
-      }
       case XBMC_VIDEOMOVE:
       {
         CServiceBroker::GetWinSystem()->OnMove(newEvent.move.x, newEvent.move.y);
@@ -318,6 +302,9 @@ void CApplication::HandlePortEvents()
         break;
       case XBMC_MODECHANGE:
         CServiceBroker::GetWinSystem()->GetGfxContext().ApplyModeChange(newEvent.mode.res);
+        break;
+      case XBMC_SCREENCHANGE:
+        CServiceBroker::GetWinSystem()->OnChangeScreen(newEvent.screen.screenIdx);
         break;
       case XBMC_USEREVENT:
         CServiceBroker::GetAppMessenger()->PostMsg(static_cast<uint32_t>(newEvent.user.code));
@@ -626,7 +613,8 @@ bool CApplication::Initialize()
   appVolume->SetHardwareVolume(level);
   CServiceBroker::GetActiveAE()->SetMute(muted);
 
-#if defined(HAS_DVD_DRIVE) && !defined(TARGET_WINDOWS) // somehow this throws an "unresolved external symbol" on win32
+#if defined(HAS_OPTICAL_DRIVE) && \
+    !defined(TARGET_WINDOWS) // somehow this throws an "unresolved external symbol" on win32
   // turn off cdio logging
   cdio_loglevel_default = CDIO_LOG_ERROR;
 #endif
@@ -1016,9 +1004,7 @@ bool CApplication::OnAction(const CAction &action)
   if (action.GetID() == ACTION_HDR_TOGGLE)
   {
     // Only enables manual HDR toggle if no video is playing or auto HDR switch is disabled
-    if (appPlayer->IsPlayingVideo() &&
-        CServiceBroker::GetSettingsComponent()->GetSettings()->GetBool(
-            CServiceBroker::GetWinSystem()->SETTING_WINSYSTEM_IS_HDR_DISPLAY))
+    if (appPlayer->IsPlayingVideo() && CServiceBroker::GetWinSystem()->IsHDRDisplaySettingEnabled())
       return true;
 
     HDR_STATUS hdrStatus = CServiceBroker::GetWinSystem()->ToggleHDR();
@@ -1039,9 +1025,7 @@ bool CApplication::OnAction(const CAction &action)
   if (action.GetID() == ACTION_CYCLE_TONEMAP_METHOD)
   {
     // Only enables tone mapping switch if display is not HDR capable or HDR is not enabled
-    if (CServiceBroker::GetSettingsComponent()->GetSettings()->GetBool(
-            CServiceBroker::GetWinSystem()->SETTING_WINSYSTEM_IS_HDR_DISPLAY) &&
-        CServiceBroker::GetWinSystem()->IsHDRDisplay())
+    if (CServiceBroker::GetWinSystem()->IsHDRDisplaySettingEnabled())
       return true;
 
     if (appPlayer->IsPlayingVideo())
@@ -1607,6 +1591,10 @@ void CApplication::OnApplicationMessage(ThreadMessage* pMsg)
     appPlayer->TriggerUpdateResolution();
     break;
 
+  case TMSG_MOVETOSCREEN:
+    CServiceBroker::GetWinSystem()->MoveToScreen(static_cast<int>(pMsg->param1));
+    break;
+
   case TMSG_MINIMIZE:
     CServiceBroker::GetWinSystem()->Minimize();
     break;
@@ -1752,6 +1740,17 @@ void CApplication::OnApplicationMessage(ThreadMessage* pMsg)
       XBMC_Event* event = static_cast<XBMC_Event*>(pMsg->lpVoid);
       OnEvent(*event);
       delete event;
+    }
+  }
+  break;
+
+  case TMSG_UPDATE_PLAYER_ITEM:
+  {
+    std::unique_ptr<CFileItem> item{static_cast<CFileItem*>(pMsg->lpVoid)};
+    if (item)
+    {
+      m_itemCurrentFile->UpdateInfo(*item);
+      CServiceBroker::GetGUI()->GetInfoManager().UpdateCurrentItem(*m_itemCurrentFile);
     }
   }
   break;
@@ -1982,7 +1981,6 @@ bool CApplication::Cleanup()
     g_directoryCache.Clear();
     //CServiceBroker::GetInputManager().ClearKeymaps(); //! @todo
     CEventServer::RemoveInstance();
-    DllLoaderContainer::Clear();
     CServiceBroker::GetPlaylistPlayer().Clear();
 
     if (m_ServiceManager)
@@ -1991,7 +1989,7 @@ bool CApplication::Cleanup()
 #ifdef TARGET_POSIX
     CXHandle::DumpObjectTracker();
 
-#ifdef HAS_DVD_DRIVE
+#ifdef HAS_OPTICAL_DRIVE
     CLibcdio::ReleaseInstance();
 #endif
 #endif
@@ -2148,7 +2146,7 @@ bool CApplication::Stop(int exitCode)
     smb.Deinit();
 #endif
 
-#if defined(TARGET_DARWIN_OSX)
+#if defined(TARGET_DARWIN_OSX) and defined(HAS_XBMCHELPER)
     if (XBMCHelper::GetInstance().IsAlwaysOn() == false)
       XBMCHelper::GetInstance().Stop();
 #endif
@@ -2359,17 +2357,12 @@ bool CApplication::PlayFile(CFileItem item, const std::string& player, bool bRes
   if (item.IsPlayList())
     return false;
 
-  // if the item is a plugin we need to resolve the plugin paths
-  if (URIUtils::HasPluginPath(item) && !XFILE::CPluginDirectory::GetResolvedPluginResult(item))
-    return false;
-
-#ifdef HAS_UPNP
-  if (URIUtils::IsUPnP(item.GetPath()))
+  // Translate/Resolve the url if needed
+  const std::unique_ptr<IDirectory> dir{CDirectoryFactory::Create(item)};
+  if (dir && !dir->Resolve(item))
   {
-    if (!XFILE::CUPnPDirectory::GetResource(item.GetURL(), item))
-      return false;
+    return false;
   }
-#endif
 
   // if we have a stacked set of files, we need to setup our stack routines for
   // "seamless" seeking and total time of the movie etc.
@@ -3202,7 +3195,7 @@ void CApplication::ProcessSlow()
 
   CServiceBroker::GetGUI()->GetTextureManager().FreeUnusedTextures(5000);
 
-#ifdef HAS_DVD_DRIVE
+#ifdef HAS_OPTICAL_DRIVE
   // checks whats in the DVD drive and tries to autostart the content (xbox games, dvd, cdda, avi files...)
   if (!appPlayer->IsPlayingVideo())
     m_Autorun->HandleAutorun();
